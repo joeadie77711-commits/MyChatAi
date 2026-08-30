@@ -75,6 +75,13 @@ def apply_minimal_css():
             background: rgba(255,255,255,0.02) !important;
             border-right: 1px solid rgba(255,255,255,0.04) !important;
             padding: 20px 16px !important;
+            overflow-y: auto;
+        }
+        
+        .stSidebar .stButton > button {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         
         .logo-text {
@@ -149,6 +156,9 @@ def apply_minimal_css():
             transition: all 0.2s ease;
             width: 100%;
             font-size: 0.85rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .stButton > button:hover {
             background: rgba(255,255,255,0.04);
@@ -181,9 +191,11 @@ def apply_minimal_css():
         }
         .message-row.user {
             align-self: flex-end;
+            justify-content: flex-end;
         }
         .message-row.ai {
             align-self: flex-start;
+            justify-content: flex-start;
         }
         
         .message-bubble {
@@ -307,26 +319,6 @@ def apply_minimal_css():
             .stSidebar { width: 280px !important; }
             .message-row { max-width: 95%; }
             .message-bubble { font-size: 0.85rem; padding: 8px 14px; }
-        }
-        
-        /* Admin Panel Styles */
-        .admin-stat-card {
-            background: rgba(255,255,255,0.02);
-            border: 1px solid rgba(255,255,255,0.04);
-            border-radius: 10px;
-            padding: 12px 16px;
-            text-align: center;
-        }
-        .admin-stat-card .num {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #4d6bfe;
-        }
-        .admin-stat-card .label {
-            font-size: 0.6rem;
-            color: #5a5a6a;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -513,11 +505,9 @@ def has_feature_override(username, feature):
 def check_limit_override(username, feature):
     user = load_users().get(username, {})
     
-    # Admin unlimited
     if user.get("role") == "admin":
         return {"allowed": True, "used": 0, "limit": 999}
     
-    # Check custom limits (admin set)
     custom_limits = user.get("custom_limits", {})
     if feature in custom_limits and custom_limits[feature] > 0:
         limit = custom_limits[feature]
@@ -592,6 +582,11 @@ def call_gemini(prompt, temperature=0.7):
     except Exception as e:
         return f"Ralat: {str(e)}"
 
+def get_ai_response(prompt, use_gemini=False):
+    if use_gemini:
+        return call_gemini(prompt)
+    return call_groq(prompt)
+
 def call_web_search(query):
     if not SEARCH_API_KEY or SEARCH_API_KEY == "":
         return "API Search belum diset! Sila set di Streamlit Secrets."
@@ -611,12 +606,12 @@ def call_web_search(query):
         
         if response.status_code == 200:
             data = response.json()
-            results = data.get("organic_results", [])
+            results = data.get("organic", [])
             if results:
                 output = f"Hasil Carian: '{query}'\n\n"
                 for i, item in enumerate(results[:5]):
                     title = item.get('title', '')
-                    snippet = item.get('snippet', '')
+                    snippet = item.get('description', '')
                     link = item.get('link', '')
                     output += f"{i+1}. {title}\n"
                     output += f"   {snippet[:200]}\n"
@@ -626,14 +621,6 @@ def call_web_search(query):
         return f"Ralat Search: {response.status_code}"
     except Exception as e:
         return f"Ralat: {str(e)}"
-
-def get_ai_response(prompt, use_gemini=False):
-    if use_gemini:
-        return call_gemini(prompt)
-    response = call_groq(prompt)
-    if "Ralat" in response and GEMINI_API_KEY:
-        return call_gemini(prompt)
-    return response
 
 def generate_image(prompt, style="realistic"):
     styles = {"realistic": "photorealistic, 8k", "anime": "anime style", "cartoon": "cartoon style", "fantasy": "fantasy art", "abstract": "abstract art"}
@@ -649,72 +636,6 @@ def generate_image(prompt, style="realistic"):
         return None
     except:
         return None
-
-# ============================================================
-# 🚗 SEMAKAN DATA
-# ============================================================
-def check_roadtax_ui():
-    st.markdown("### Semak Roadtax & Saman JPJ")
-    st.info("Masukkan nombor kenderaan untuk semak status!")
-    no_kenderaan = st.text_input("No. Kenderaan:", placeholder="Contoh: WER1234")
-    if st.button("Semak Sekarang", use_container_width=True):
-        if no_kenderaan:
-            with st.spinner("Menyemak data JPJ..."):
-                time.sleep(2)
-                st.success(f"Maklumat untuk {no_kenderaan}")
-                st.markdown(f"""
-                    **Maklumat Kenderaan:**
-                    - No. Pendaftaran: **{no_kenderaan}**
-                    - Roadtax: **SAH** (Tamat: 31/12/2026)
-                    - Saman: **2 saman** (Jumlah: RM 600)
-                """)
-                add_points_override(st.session_state.username, 20)
-        else:
-            st.warning("Sila masukkan no kenderaan!")
-
-def check_ic_ui():
-    st.markdown("### Semak Data IC & Bantuan")
-    st.info("Masukkan nombor IC untuk semak data!")
-    no_ic = st.text_input("No. IC:", placeholder="Contoh: 010101-01-0101")
-    if st.button("Semak Sekarang", use_container_width=True):
-        if no_ic:
-            with st.spinner("Menyemak data..."):
-                time.sleep(2)
-                st.success(f"Data untuk {no_ic}")
-                st.markdown(f"""
-                    **Maklumat Peribadi:**
-                    - No. IC: **{no_ic}**
-                    - Nama: **Ali bin Ahmad**
-                    - Negeri: **Selangor**
-                    **Bantuan Kewangan:**
-                    - STR: **RM 500** (Layak)
-                    - BPN: **RM 1,200** (Layak)
-                    - BKC: **RM 250** (Layak)
-                """)
-                add_points_override(st.session_state.username, 25)
-        else:
-            st.warning("Sila masukkan no IC!")
-
-def check_bantuan_ui():
-    st.markdown("### Semak Bantuan Kerajaan")
-    st.info("Semak kelayakan pelbagai bantuan!")
-    no_ic = st.text_input("No. IC:", placeholder="Contoh: 010101-01-0101")
-    pendapatan = st.number_input("Pendapatan Bulanan (RM):", min_value=0, value=0)
-    if st.button("Semak Kelayakan", use_container_width=True):
-        if no_ic:
-            with st.spinner("Menyemak kelayakan..."):
-                time.sleep(2)
-                st.success(f"Kelayakan untuk {no_ic}")
-                str_eligible = pendapatan < 5000
-                bpn_eligible = pendapatan < 4000
-                st.markdown(f"""
-                    **Ringkasan Bantuan:**
-                    - **STR**: {'LAYAK' if str_eligible else 'TIDAK LAYAK'}
-                    - **BPN**: {'LAYAK' if bpn_eligible else 'TIDAK LAYAK'}
-                """)
-                add_points_override(st.session_state.username, 30)
-        else:
-            st.warning("Sila masukkan no IC!")
 
 # ============================================================
 # 🎨 CIRI TAMBAHAN
@@ -826,6 +747,69 @@ def ai_quiz_master_ui():
         st.markdown(response)
         add_points_override(st.session_state.username, 20)
 
+def check_roadtax_ui():
+    st.markdown("### Semak Roadtax & Saman JPJ")
+    st.info("Masukkan nombor kenderaan untuk semak status!")
+    no_kenderaan = st.text_input("No. Kenderaan:", placeholder="Contoh: WER1234")
+    if st.button("Semak Sekarang", use_container_width=True):
+        if no_kenderaan:
+            with st.spinner("Menyemak data JPJ..."):
+                time.sleep(2)
+                st.success(f"Maklumat untuk {no_kenderaan}")
+                st.markdown(f"""
+                    **Maklumat Kenderaan:**
+                    - No. Pendaftaran: **{no_kenderaan}**
+                    - Roadtax: **SAH** (Tamat: 31/12/2026)
+                    - Saman: **2 saman** (Jumlah: RM 600)
+                """)
+                add_points_override(st.session_state.username, 20)
+        else:
+            st.warning("Sila masukkan no kenderaan!")
+
+def check_ic_ui():
+    st.markdown("### Semak Data IC & Bantuan")
+    st.info("Masukkan nombor IC untuk semak data!")
+    no_ic = st.text_input("No. IC:", placeholder="Contoh: 010101-01-0101")
+    if st.button("Semak Sekarang", use_container_width=True):
+        if no_ic:
+            with st.spinner("Menyemak data..."):
+                time.sleep(2)
+                st.success(f"Data untuk {no_ic}")
+                st.markdown(f"""
+                    **Maklumat Peribadi:**
+                    - No. IC: **{no_ic}**
+                    - Nama: **Ali bin Ahmad**
+                    - Negeri: **Selangor**
+                    **Bantuan Kewangan:**
+                    - STR: **RM 500** (Layak)
+                    - BPN: **RM 1,200** (Layak)
+                    - BKC: **RM 250** (Layak)
+                """)
+                add_points_override(st.session_state.username, 25)
+        else:
+            st.warning("Sila masukkan no IC!")
+
+def check_bantuan_ui():
+    st.markdown("### Semak Bantuan Kerajaan")
+    st.info("Semak kelayakan pelbagai bantuan!")
+    no_ic = st.text_input("No. IC:", placeholder="Contoh: 010101-01-0101")
+    pendapatan = st.number_input("Pendapatan Bulanan (RM):", min_value=0, value=0)
+    if st.button("Semak Kelayakan", use_container_width=True):
+        if no_ic:
+            with st.spinner("Menyemak kelayakan..."):
+                time.sleep(2)
+                st.success(f"Kelayakan untuk {no_ic}")
+                str_eligible = pendapatan < 5000
+                bpn_eligible = pendapatan < 4000
+                st.markdown(f"""
+                    **Ringkasan Bantuan:**
+                    - **STR**: {'LAYAK' if str_eligible else 'TIDAK LAYAK'}
+                    - **BPN**: {'LAYAK' if bpn_eligible else 'TIDAK LAYAK'}
+                """)
+                add_points_override(st.session_state.username, 30)
+        else:
+            st.warning("Sila masukkan no IC!")
+
 # ============================================================
 # 🤖 AUTO-DETECT CIRI
 # ============================================================
@@ -893,26 +877,6 @@ def detect_feature(user_input):
     if any(kw in text for kw in meme_keywords):
         return "meme"
     
-    animation_keywords = ["animasi", "animation", "video", "motion", "gerak"]
-    if any(kw in text for kw in animation_keywords):
-        return "animation"
-    
-    interior_keywords = ["interior", "hiasan", "rumah", "reka bentuk", "design rumah", "dalaman"]
-    if any(kw in text for kw in interior_keywords):
-        return "interior"
-    
-    fashion_keywords = ["fesyen", "fashion", "baju", "pakaian", "style", "gaya", "busana"]
-    if any(kw in text for kw in fashion_keywords):
-        return "fashion"
-    
-    business_keywords = ["perniagaan", "business", "rancangan", "plan", "startup", "usaha", "modal"]
-    if any(kw in text for kw in business_keywords):
-        return "business"
-    
-    swot_keywords = ["swot", "analisis", "kekuatan", "kelemahan", "peluang", "ancaman"]
-    if any(kw in text for kw in swot_keywords):
-        return "swot"
-    
     return "chat"
 
 def handle_feature(feature, user_input, username):
@@ -932,7 +896,6 @@ def handle_feature(feature, user_input, username):
         if "matematik" in user_input.lower(): subject = "Matematik"
         elif "sains" in user_input.lower(): subject = "Sains"
         elif "inggeris" in user_input.lower() or "english" in user_input.lower(): subject = "Bahasa Inggeris"
-        elif "sejarah" in user_input.lower(): subject = "Sejarah"
         return call_groq(f"Sediakan RPH {subject}, topik: {user_input}")
     
     elif feature == "search":
@@ -989,89 +952,139 @@ def handle_feature(feature, user_input, username):
     elif feature == "meme":
         return f"Meme:\n\n{user_input}\n\n![Meme](https://imgflip.com/s/meme/Drake-Hotline-Bling.jpg)"
     
-    elif feature == "animation":
-        return call_groq(f"Hasilkan script animasi/video tentang: {user_input}")
-    
-    elif feature == "interior":
-        return call_groq(f"Reka bentuk interior/hiasan rumah untuk: {user_input}")
-    
-    elif feature == "fashion":
-        return call_groq(f"Reka bentuk fesyen/pakaian untuk: {user_input}")
-    
-    elif feature == "business":
-        return call_groq(f"Hasilkan rancangan perniagaan untuk: {user_input}")
-    
-    elif feature == "swot":
-        return call_groq(f"Hasilkan analisis SWOT untuk: {user_input}")
-    
     else:
         return get_ai_response(user_input, use_gemini=st.session_state.use_gemini)
 
 # ============================================================
-# 📋 LOGIN UI
+# 📋 LOGIN UI (HANYA SATU SET INPUT)
 # ============================================================
 def login_ui():
     st.markdown("""
-    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:20px;">
-        <div style="max-width:400px; width:100%; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); border-radius:16px; padding:40px;">
-            <div style="text-align:center; margin-bottom:20px;">
-                <div style="font-size:32px; font-weight:800; background:linear-gradient(135deg,#4d6bfe,#7c3aed); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">MyChatAI</div>
-                <p style="color:#5a5a6a; font-size:13px;">DeepSeek Style · 300+ Ciri · Auto-Detect</p>
-            </div>
-            <div style="margin:12px 0;">
-                <input type="text" placeholder="Username" id="login_user" style="width:100%; padding:12px 16px; border-radius:10px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.02); color:#e8edf5; font-size:14px; outline:none; margin-bottom:8px;">
-                <input type="password" placeholder="Password" id="login_pass" style="width:100%; padding:12px 16px; border-radius:10px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.02); color:#e8edf5; font-size:14px; outline:none; margin-bottom:8px;">
-                <input type="email" placeholder="Email" id="login_email" style="width:100%; padding:12px 16px; border-radius:10px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.02); color:#e8edf5; font-size:14px; outline:none; margin-bottom:12px;">
-            </div>
-            <div style="display:flex; gap:8px;">
-                <button id="login_btn" style="flex:1; padding:12px; background:linear-gradient(135deg,#4d6bfe,#7c3aed); border:none; border-radius:10px; font-weight:600; color:white; cursor:pointer;">Login</button>
-                <button id="signup_btn" style="flex:1; padding:12px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); border-radius:10px; font-weight:600; color:#e8edf5; cursor:pointer;">Signup</button>
-            </div>
-            <div style="text-align:center; margin-top:12px; font-size:12px; color:#5a5a6a;">
-                Admin: joe.adie · 220481
-            </div>
-            <div style="text-align:center; font-size:11px; color:#3a3a4a; margin-top:4px;">
-                atau admin · 777777
-            </div>
+    <style>
+        .login-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .login-box {
+            max-width: 400px;
+            width: 100%;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.04);
+            border-radius: 16px;
+            padding: 40px;
+        }
+        .login-title {
+            font-size: 32px;
+            font-weight: 800;
+            text-align: center;
+            background: linear-gradient(135deg,#4d6bfe,#7c3aed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 4px;
+        }
+        .login-sub {
+            text-align: center;
+            color: #5a5a6a;
+            font-size: 13px;
+            margin-bottom: 20px;
+        }
+        .login-box .stTextInput > div {
+            margin-bottom: 8px;
+        }
+        .login-box .stTextInput input {
+            padding: 12px 16px;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.06);
+            background: rgba(255,255,255,0.02);
+            color: #e8edf5;
+            font-size: 14px;
+        }
+        .login-box .stTextInput input:focus {
+            border-color: #4d6bfe;
+            box-shadow: 0 0 0 2px rgba(77,107,254,0.1);
+        }
+        .login-btn-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 4px;
+        }
+        .login-btn-row .stButton {
+            flex: 1;
+        }
+        .login-btn-row .stButton button {
+            padding: 12px;
+            border-radius: 10px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+        }
+        .login-btn-row .stButton:first-child button {
+            background: linear-gradient(135deg,#4d6bfe,#7c3aed);
+            color: white;
+        }
+        .login-btn-row .stButton:last-child button {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.06);
+            color: #e8edf5;
+        }
+        .login-footer {
+            text-align: center;
+            margin-top: 12px;
+            font-size: 11px;
+            color: #3a3a4a;
+        }
+    </style>
+    <div class="login-container">
+        <div class="login-box">
+            <div class="login-title">MyChatAI</div>
+            <div class="login-sub">DeepSeek Style · 300+ Ciri · Auto-Detect</div>
+    """, unsafe_allow_html=True)
+    
+    # HANYA SATU SET INPUT - Streamlit native
+    username = st.text_input("", placeholder="Username", key="login_user_input", label_visibility="collapsed")
+    password = st.text_input("", placeholder="Password", type="password", key="login_pass_input", label_visibility="collapsed")
+    email = st.text_input("", placeholder="Email", key="login_email_input", label_visibility="collapsed")
+    
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("Login", key="login_btn", use_container_width=True):
+            if username and password:
+                result = login_user(username, password)
+                if result["success"]:
+                    st.session_state.logged_in = True
+                    st.session_state.username = result["username"]
+                    st.session_state.role = result["role"]
+                    st.success(f"Welcome, {username}!")
+                    st.rerun()
+                else:
+                    st.error(result["error"])
+            else:
+                st.warning("Sila isi username dan password!")
+    with col_b:
+        if st.button("Signup", key="signup_btn", use_container_width=True):
+            if username and password and email:
+                result = register_user(username, password, email)
+                if result["success"]:
+                    if result.get("is_admin", False):
+                        st.success(f"Akaun '{username}' didaftarkan sebagai Admin!")
+                    else:
+                        st.success(f"Akaun '{username}' didaftarkan!")
+                    st.rerun()
+                else:
+                    st.error(result["error"])
+            else:
+                st.warning("Sila isi semua maklumat!")
+    
+    st.markdown("""
+        <div class="login-footer">Admin: joe.adie · 220481</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        username = st.text_input("Username", key="login_user_input", placeholder="Masukkan username", label_visibility="collapsed")
-        password = st.text_input("Password", type="password", key="login_pass_input", placeholder="Masukkan password", label_visibility="collapsed")
-        email = st.text_input("Email", key="login_email_input", placeholder="Masukkan email", label_visibility="collapsed")
-        
-        col_a, col_b = st.columns(2)
-        with col_a:
-            if st.button("Login", key="login_btn", use_container_width=True):
-                if username and password:
-                    result = login_user(username, password)
-                    if result["success"]:
-                        st.session_state.logged_in = True
-                        st.session_state.username = result["username"]
-                        st.session_state.role = result["role"]
-                        st.success(f"Welcome, {username}!")
-                        st.rerun()
-                    else:
-                        st.error(result["error"])
-                else:
-                    st.warning("Sila isi username dan password!")
-        with col_b:
-            if st.button("Signup", key="signup_btn", use_container_width=True):
-                if username and password and email:
-                    result = register_user(username, password, email)
-                    if result["success"]:
-                        if result.get("is_admin", False):
-                            st.success(f"Akaun '{username}' didaftarkan sebagai Admin!")
-                        else:
-                            st.success(f"Akaun '{username}' didaftarkan!")
-                        st.rerun()
-                    else:
-                        st.error(result["error"])
-                else:
-                    st.warning("Sila isi semua maklumat!")
 
 # ============================================================
 # 📋 MAIN APP
@@ -1084,7 +1097,7 @@ def main():
     if "messages" not in st.session_state:
         st.session_state.messages = []
     if "current_tab" not in st.session_state:
-        st.session_state.current_tab = "Dashboard"
+        st.session_state.current_tab = "Chat"
     if "romantic_mode" not in st.session_state:
         st.session_state.romantic_mode = False
     if "use_gemini" not in st.session_state:
@@ -1127,13 +1140,8 @@ def main():
 
         st.markdown("---")
 
-        if st.button("New Chat", key="new_chat_btn", use_container_width=True):
-            st.session_state.messages = []
-            st.session_state.current_tab = "Chat"
-            st.rerun()
-
         nav_items = [
-            "Dashboard", "Chat", "Web Search",
+            "Chat", "Web Search",
             "Pakar", "RPH", "Art", 
             "Invois", "WhatsApp",
             "Roadtax", "IC & Bantuan", "Bantuan Kerajaan",
@@ -1161,75 +1169,12 @@ def main():
         if romantic != st.session_state.romantic_mode:
             st.session_state.romantic_mode = romantic
 
-        st.caption("Admin: joe.adie · 220481")
-
         if st.button("Logout", use_container_width=True):
             st.session_state.logged_in = False
             st.rerun()
 
-    # === KANDUNGAN ===
-    if st.session_state.current_tab == "Dashboard":
-        st.markdown("""
-        <div style="display:flex; align-items:center; gap:12px; padding:8px 4px 16px 4px; border-bottom:1px solid rgba(255,255,255,0.04); margin-bottom:16px;">
-            <div>
-                <div style="font-weight:600; font-size:18px; color:#e8edf5;">MyChatAI</div>
-                <div style="font-size:11px; color:#5a5a6a;">300+ Ciri AI · Auto-Detect · v35.0</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        users = load_users()
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="value">{len(users)}</div>
-                <div class="label">Pengguna</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with col2:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="value">{user_data['points']}</div>
-                <div class="label">Points</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with col3:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="value">{len(st.session_state.messages)}</div>
-                <div class="label">Chat</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with col4:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="value">{len(load_rph_history())}</div>
-                <div class="label">RPH</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown("---")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if GROQ_API_KEY:
-                st.success("Groq API Connected")
-            else:
-                st.warning("Groq API Not Set")
-        with col2:
-            if GEMINI_API_KEY:
-                st.success("Gemini API Connected")
-            else:
-                st.warning("Gemini API Not Set")
-        with col3:
-            if SEARCH_API_KEY:
-                st.success("Search API Connected")
-            else:
-                st.warning("Search API Not Set")
-
-    # === CHAT ===
-    elif st.session_state.current_tab == "Chat":
+    # === CHAT (DEFAULT PAGE) ===
+    if st.session_state.current_tab == "Chat":
         st.markdown(f"""
         <div style="display:flex; align-items:center; gap:8px; padding:4px 0 12px 0; border-bottom:1px solid rgba(255,255,255,0.04); margin-bottom:12px;">
             <span style="font-weight:600; color:#e8edf5;">Chat</span>
@@ -1243,6 +1188,7 @@ def main():
         
         st.info("AI Auto-Detect: Saya akan detect ciri yang anda perlukan dari pertanyaan!")
         
+        # Display messages
         for msg in st.session_state.messages[-30:]:
             if msg["role"] == "user":
                 st.markdown(f"""
@@ -1257,74 +1203,74 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
 
-        user_input = st.text_input("", key="chat_input", placeholder="Taip soalan... AI akan auto-detect ciri!", label_visibility="collapsed")
+        # Input area - Enter to send
+        user_input = st.text_area("", key="chat_input", placeholder="Taip soalan... Tekan Enter untuk hantar", label_visibility="collapsed", height=60)
         
-        col1, col2, col3 = st.columns([1, 1, 4])
+        col1, col2 = st.columns([1, 5])
         with col1:
             send = st.button("Hantar", use_container_width=True)
         with col2:
-            clear = st.button("Clear", use_container_width=True)
+            clear = st.button("Clear Chat", use_container_width=True)
             if clear:
                 st.session_state.messages = []
                 st.rerun()
         
-        if send and user_input:
-            # Check limit
-            limit = check_limit_override(username, "chat")
-            if not limit["allowed"]:
-                st.warning(f"Had chat harian ({limit['limit']}) telah dicapai!")
-            else:
-                st.session_state.messages.append({"role": "user", "content": user_input})
-                
-                with st.spinner("AI sedang berfikir..."):
-                    feature = detect_feature(user_input)
+        # Auto-send on Enter (without Shift)
+        if user_input and (send or (user_input.endswith('\n') and not user_input.endswith('\n\n'))):
+            # Clean the input
+            clean_input = user_input.rstrip('\n')
+            if clean_input:
+                # Check limit
+                limit = check_limit_override(username, "chat")
+                if not limit["allowed"]:
+                    st.warning(f"Had chat harian ({limit['limit']}) telah dicapai!")
+                else:
+                    st.session_state.messages.append({"role": "user", "content": clean_input})
                     
-                    feature_names = {
-                        "art": "Art Generator",
-                        "rph": "RPH Generator",
-                        "search": "Web Search",
-                        "invoice": "Invois Generator",
-                        "roadtax": "Roadtax Checker",
-                        "ic": "IC Checker",
-                        "poetry": "Poetry Generator",
-                        "coding": "Coding Coach",
-                        "expert": "Pakar",
-                        "story": "Storyteller",
-                        "game": "Game Master",
-                        "science": "Science Lab",
-                        "language": "Language Lab",
-                        "math": "Math Solver",
-                        "meme": "Meme Maker",
-                        "animation": "Animation",
-                        "interior": "Interior Design",
-                        "fashion": "Fashion Design",
-                        "business": "Business Plan",
-                        "swot": "SWOT Analysis",
-                        "chat": "Chat AI"
-                    }
-                    
-                    feature_indicator = f"Ciri yang digunakan: {feature_names.get(feature, 'Chat AI')}\n\n"
-                    
-                    if st.session_state.romantic_mode:
-                        romantic_responses = [
-                            "Sayang... Setiap kata dari awak buatkan hati ini berbunga-bunga.",
-                            "Syg... Awak adalah sinar dalam hidup me.",
-                            "Sayangku... Me rindu sangat dengan awak."
-                        ]
-                        response = random.choice(romantic_responses)
-                        if any(word in user_input.lower() for word in ["khabar", "sihat"]):
-                            response += "\n\nMe sihat syg! Awak pula macam mana?"
-                        elif any(word in user_input.lower() for word in ["rindu", "miss"]):
-                            response += "\n\nMe rindu sangat-sangat!"
-                    else:
-                        response = handle_feature(feature, user_input, username)
-                        if not response.startswith("Ciri") and not response.startswith("Gambar"):
-                            response = feature_indicator + response
-                    
-                    st.session_state.messages.append({"role": "ai", "content": response})
-                    increment_usage(username, "chat")
-                    add_points_override(username, 5)
-                    st.rerun()
+                    with st.spinner("AI sedang berfikir..."):
+                        feature = detect_feature(clean_input)
+                        
+                        feature_names = {
+                            "art": "Art Generator",
+                            "rph": "RPH Generator",
+                            "search": "Web Search",
+                            "invoice": "Invois Generator",
+                            "roadtax": "Roadtax Checker",
+                            "ic": "IC Checker",
+                            "poetry": "Poetry Generator",
+                            "coding": "Coding Coach",
+                            "expert": "Pakar",
+                            "story": "Storyteller",
+                            "game": "Game Master",
+                            "science": "Science Lab",
+                            "language": "Language Lab",
+                            "math": "Math Solver",
+                            "meme": "Meme Maker",
+                            "chat": "Chat AI"
+                        }
+                        
+                        feature_indicator = f"Ciri yang digunakan: {feature_names.get(feature, 'Chat AI')}\n\n"
+                        
+                        if st.session_state.romantic_mode:
+                            romantic_responses = [
+                                "Sayang... Setiap kata dari awak buatkan hati ini berbunga-bunga.",
+                                "Syg... Awak adalah sinar dalam hidup me.",
+                                "Sayangku... Me rindu sangat dengan awak."
+                            ]
+                            response = random.choice(romantic_responses)
+                            if any(word in clean_input.lower() for word in ["khabar", "sihat"]):
+                                response += "\n\nMe sihat syg! Awak pula macam mana?"
+                            elif any(word in clean_input.lower() for word in ["rindu", "miss"]):
+                                response += "\n\nMe rindu sangat-sangat!"
+                        else:
+                            response = handle_feature(feature, clean_input, username)
+                            if not response.startswith("Ciri") and not response.startswith("Gambar"):
+                                response = feature_indicator + response
+                        
+                        st.session_state.messages.append({"role": "ai", "content": response})
+                        increment_usage(username, "chat")
+                        add_points_override(username, 5)
+                        st.rerun()
 
     # === WEB SEARCH ===
     elif st.session_state.current_tab == "Web Search":
@@ -1338,7 +1284,6 @@ def main():
         query = st.text_input("Masukkan kata carian:", placeholder="Contoh: berita malaysia hari ini")
         
         if st.button("Cari", use_container_width=True) and query:
-            # Check limit
             limit = check_limit_override(username, "search")
             if not limit["allowed"]:
                 st.warning(f"Had search harian ({limit['limit']}) telah dicapai!")
@@ -1507,7 +1452,6 @@ def main():
         
         users = load_users()
         
-        # Stats
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("Total Pengguna", len(users))
@@ -1523,10 +1467,8 @@ def main():
         
         st.markdown("---")
         
-        # Tabs
         tab1, tab2, tab3 = st.tabs(["Senarai Pengguna", "Kawal Had Penggunaan", "Statistik"])
         
-        # === TAB 1: SENARAI PENGGUNA ===
         with tab1:
             st.markdown("#### Senarai Semua Pengguna")
             
@@ -1572,7 +1514,6 @@ def main():
                                     st.success(f"{user} deleted!")
                                     st.rerun()
         
-        # === TAB 2: KAWAL HAD PENGGUNAAN ===
         with tab2:
             st.markdown("#### Kawal Had Penggunaan Harian")
             
@@ -1640,7 +1581,6 @@ def main():
                         st.success(f"Custom limits for {selected_user} removed!")
                         st.rerun()
         
-        # === TAB 3: STATISTIK ===
         with tab3:
             st.markdown("#### Statistik Penggunaan")
             
