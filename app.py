@@ -647,52 +647,33 @@ def contractor_management_ui():
                 - 🔧 Peralatan: RM {equipment_cost:,.2f}
                 - 📊 Kontingensi ({contingency}%): RM {contingency_amount:,.2f}
                 - **Total: RM {grand_total:,.2f}**
-
-                📌 **Kos setiap meter persegi:** RM {grand_total / land_area:,.2f}" if land_area > 0 else ""
             """)
             add_points_override(st.session_state.username, 20)
 
 # ============================================================
-# 🎨 50 CIRI TAMBAHAN (201-250)
+# 🎨 50 CIRI TAMBAHAN (201-250) - RINGKASAN
 # ============================================================
 
-# === 201. AI SCIENCE LAB ===
 def ai_science_lab_ui():
     st.markdown("### 🔬 AI Science Lab")
     st.info("💡 Eksperimen sains maya dengan AI!")
-    experiment = st.selectbox("🧪 Pilih Eksperimen:", [
-        "Volcano Eruption",
-        "Plant Growth",
-        "Chemical Reaction",
-        "Solar System",
-        "Electric Circuit",
-        "DNA Structure"
-    ])
+    experiment = st.selectbox("🧪 Pilih Eksperimen:", ["Volcano Eruption", "Plant Growth", "Chemical Reaction", "Solar System", "Electric Circuit", "DNA Structure"])
     if st.button("🔬 Jalankan Eksperimen", use_container_width=True):
         with st.spinner("🔬 Menjalankan simulasi..."):
             response = call_groq(f"Terangkan eksperimen sains: {experiment}\n\nSertakan: 1. Bahan 2. Langkah 3. Prinsip saintifik 4. Kesimpulan")
             st.markdown(response)
             add_points_override(st.session_state.username, 25)
 
-# === 202. AI HISTORY EXPLORER ===
 def ai_history_explorer_ui():
     st.markdown("### 📜 AI History Explorer")
     st.info("💡 Terokai sejarah interaktif!")
-    era = st.selectbox("📌 Pilih Era:", [
-        "Ancient Egypt",
-        "Roman Empire",
-        "World War II",
-        "Malaysian Independence",
-        "Space Age",
-        "Digital Revolution"
-    ])
+    era = st.selectbox("📌 Pilih Era:", ["Ancient Egypt", "Roman Empire", "World War II", "Malaysian Independence", "Space Age", "Digital Revolution"])
     if st.button("🔍 Terokai", use_container_width=True):
         with st.spinner("📜 Meneroka sejarah..."):
             response = call_groq(f"Terangkan era {era}\n\nSertakan: 1. Peristiwa penting 2. Tokoh 3. Kesan kepada dunia")
             st.markdown(response)
             add_points_override(st.session_state.username, 20)
 
-# === 203. AI LANGUAGE LAB ===
 def ai_language_lab_ui():
     st.markdown("### 🌐 AI Language Lab")
     st.info("💡 Belajar bahasa dengan AI!")
@@ -704,7 +685,6 @@ def ai_language_lab_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 15)
 
-# === 204. AI MATH SOLVER ===
 def ai_math_solver_ui():
     st.markdown("### 📐 AI Math Solver")
     st.info("💡 Selesaikan masalah matematik dengan AI!")
@@ -715,7 +695,6 @@ def ai_math_solver_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 20)
 
-# === 205. AI CODING COACH ===
 def ai_coding_coach_ui():
     st.markdown("### 💻 AI Coding Coach")
     st.info("💡 Bimbingan coding dengan AI!")
@@ -727,7 +706,6 @@ def ai_coding_coach_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 25)
 
-# === 206. AI DEBATE PARTNER ===
 def ai_debate_partner_ui():
     st.markdown("### 🗣️ AI Debate Partner")
     st.info("💡 Berdebat dengan AI!")
@@ -739,7 +717,6 @@ def ai_debate_partner_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 20)
 
-# === 207. AI STORYTELLER ===
 def ai_storyteller_ui():
     st.markdown("### 📖 AI Storyteller")
     st.info("💡 Cerita interaktif dengan AI!")
@@ -751,7 +728,6 @@ def ai_storyteller_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 25)
 
-# === 208. AI POETRY GENERATOR ===
 def ai_poetry_ui():
     st.markdown("### 📝 AI Poetry Generator")
     st.info("💡 Hasilkan puisi dengan AI!")
@@ -763,7 +739,6 @@ def ai_poetry_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 20)
 
-# === 209. AI ANIMATION MAKER ===
 def ai_animation_maker_ui():
     st.markdown("### 🎬 AI Animation Maker")
     st.info("💡 Hasilkan animasi dengan AI!")
@@ -774,7 +749,6 @@ def ai_animation_maker_ui():
         st.video("https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4")
         add_points_override(st.session_state.username, 30)
 
-# === 210. AI 3D MODEL GENERATOR ===
 def ai_3d_model_ui():
     st.markdown("### 🎨 AI 3D Model Generator")
     st.info("💡 Hasilkan model 3D dengan AI!")
@@ -784,7 +758,6 @@ def ai_3d_model_ui():
         st.image("https://via.placeholder.com/300x200/1a237e/ffffff?text=3D+Model")
         add_points_override(st.session_state.username, 25)
 
-# === 211. AI TATTOO DESIGNER ===
 def ai_tattoo_designer_ui():
     st.markdown("### 🎨 AI Tattoo Designer")
     st.info("💡 Reka bentuk tatu dengan AI!")
@@ -796,7 +769,6 @@ def ai_tattoo_designer_ui():
             st.image(img, use_container_width=True)
             add_points_override(st.session_state.username, 20)
 
-# === 212. AI HAIRSTYLE SIMULATOR ===
 def ai_hairstyle_ui():
     st.markdown("### 💇 AI Hairstyle Simulator")
     st.info("💡 Simulasi gaya rambut dengan AI!")
@@ -805,7 +777,6 @@ def ai_hairstyle_ui():
         st.success(f"✅ Gaya rambut {style} disimulasikan!")
         add_points_override(st.session_state.username, 15)
 
-# === 213. AI INTERIOR DESIGNER ===
 def ai_interior_designer_ui():
     st.markdown("### 🏠 AI Interior Designer")
     st.info("💡 Reka bentuk dalaman dengan AI!")
@@ -817,7 +788,6 @@ def ai_interior_designer_ui():
             st.image(img, use_container_width=True)
             add_points_override(st.session_state.username, 25)
 
-# === 214. AI FASHION DESIGNER ===
 def ai_fashion_designer_ui():
     st.markdown("### 👗 AI Fashion Designer")
     st.info("💡 Reka bentuk fesyen dengan AI!")
@@ -829,7 +799,6 @@ def ai_fashion_designer_ui():
             st.image(img, use_container_width=True)
             add_points_override(st.session_state.username, 20)
 
-# === 215. AI BUSINESS PLAN ===
 def ai_business_plan_ui():
     st.markdown("### 💼 AI Business Plan")
     st.info("💡 Hasilkan rancangan perniagaan profesional!")
@@ -842,7 +811,6 @@ def ai_business_plan_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 35)
 
-# === 216. AI MARKET ANALYSIS ===
 def ai_market_analysis_ui():
     st.markdown("### 📊 AI Market Analysis")
     st.info("💡 Analisis pasaran dengan AI!")
@@ -854,7 +822,6 @@ def ai_market_analysis_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 30)
 
-# === 217. AI COMPETITOR ANALYSIS ===
 def ai_competitor_analysis_ui():
     st.markdown("### 🎯 AI Competitor Analysis")
     st.info("💡 Analisis pesaing dengan AI!")
@@ -866,7 +833,6 @@ def ai_competitor_analysis_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 25)
 
-# === 218. AI PRICING STRATEGY ===
 def ai_pricing_strategy_ui():
     st.markdown("### 💰 AI Pricing Strategy")
     st.info("💡 Strategi harga dengan AI!")
@@ -878,7 +844,6 @@ def ai_pricing_strategy_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 25)
 
-# === 219. AI SWOT ANALYSIS ===
 def ai_swot_analysis_ui():
     st.markdown("### 📊 AI SWOT Analysis")
     st.info("💡 Analisis SWOT dengan AI!")
@@ -889,7 +854,6 @@ def ai_swot_analysis_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 25)
 
-# === 220. AI PITCH DECK ===
 def ai_pitch_deck_ui():
     st.markdown("### 📄 AI Pitch Deck")
     st.info("💡 Hasilkan pembentangan pelabur!")
@@ -901,7 +865,6 @@ def ai_pitch_deck_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 30)
 
-# === 221. AI FITNESS TRACKER ===
 def ai_fitness_tracker_ui():
     st.markdown("### 🏋️ AI Fitness Tracker")
     st.info("💡 Jejak dan rancang senaman anda!")
@@ -913,7 +876,6 @@ def ai_fitness_tracker_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 20)
 
-# === 222. AI MEAL PLANNER ===
 def ai_meal_planner_ui():
     st.markdown("### 🍽️ AI Meal Planner")
     st.info("💡 Rancang makanan dengan AI!")
@@ -925,7 +887,6 @@ def ai_meal_planner_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 25)
 
-# === 223. AI SLEEP TRACKER ===
 def ai_sleep_tracker_ui():
     st.markdown("### 😴 AI Sleep Tracker")
     st.info("💡 Jejak tidur dengan AI!")
@@ -937,7 +898,6 @@ def ai_sleep_tracker_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 15)
 
-# === 224. AI MEDITATION COACH ===
 def ai_meditation_coach_ui():
     st.markdown("### 🧘 AI Meditation Coach")
     st.info("💡 Bimbingan meditasi dengan AI!")
@@ -949,7 +909,6 @@ def ai_meditation_coach_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 20)
 
-# === 225. AI YOGA GUIDE ===
 def ai_yoga_guide_ui():
     st.markdown("### 🧘 AI Yoga Guide")
     st.info("💡 Panduan yoga dengan AI!")
@@ -961,7 +920,6 @@ def ai_yoga_guide_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 20)
 
-# === 226. AI DIET PLANNER ===
 def ai_diet_planner_ui():
     st.markdown("### 🥗 AI Diet Planner")
     st.info("💡 Rancang diet dengan AI!")
@@ -973,7 +931,6 @@ def ai_diet_planner_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 25)
 
-# === 227. AI DATING COACH ===
 def ai_dating_coach_ui():
     st.markdown("### 💕 AI Dating Coach")
     st.info("💡 Bimbingan percintaan dengan AI!")
@@ -984,7 +941,6 @@ def ai_dating_coach_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 20)
 
-# === 228. AI SOCIAL MEDIA MANAGER ===
 def ai_social_media_manager_ui():
     st.markdown("### 📱 AI Social Media Manager")
     st.info("💡 Urus media sosial dengan AI!")
@@ -996,7 +952,6 @@ def ai_social_media_manager_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 25)
 
-# === 229. AI CONTENT CREATOR ===
 def ai_content_creator_ui():
     st.markdown("### 📱 AI Content Creator")
     st.info("💡 Hasilkan kandungan media sosial!")
@@ -1008,7 +963,6 @@ def ai_content_creator_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 25)
 
-# === 230. AI INFLUENCER ANALYZER ===
 def ai_influencer_analyzer_ui():
     st.markdown("### 📊 AI Influencer Analyzer")
     st.info("💡 Analisis influencer dengan AI!")
@@ -1019,7 +973,6 @@ def ai_influencer_analyzer_ui():
             st.markdown(response)
             add_points_override(st.session_state.username, 20)
 
-# === 231-250: CIRI TAMBAHAN LAIN ===
 def ai_meme_maker_ui():
     st.markdown("### 😂 AI Meme Maker")
     text = st.text_input("📝 Teks Meme:")
@@ -1140,81 +1093,19 @@ def apply_modern_css():
     st.markdown("""
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-            * {
-                font-family: 'Inter', sans-serif;
-            }
-            .stApp {
-                background: #0a0a0f;
-            }
-            .stSidebar {
-                background: rgba(255,255,255,0.02) !important;
-                border-right: 1px solid rgba(255,255,255,0.05) !important;
-            }
-            .stButton > button {
-                background: linear-gradient(135deg, #ffd700, #ff8800);
-                color: #0a0a0f;
-                border: none;
-                border-radius: 12px;
-                font-weight: 700;
-                padding: 10px 20px;
-                transition: all 0.3s ease;
-                width: 100%;
-            }
-            .stButton > button:hover {
-                transform: scale(1.02);
-                box-shadow: 0 0 30px rgba(255,215,0,0.2);
-            }
-            .stMetric > div {
-                background: rgba(255,255,255,0.02);
-                border: 1px solid rgba(255,255,255,0.04);
-                border-radius: 12px;
-                padding: 12px;
-            }
-            ::-webkit-scrollbar {
-                width: 4px;
-            }
-            ::-webkit-scrollbar-thumb {
-                background: #ffd700;
-                border-radius: 10px;
-            }
-            .glass {
-                background: rgba(255,255,255,0.02);
-                backdrop-filter: blur(20px);
-                border: 1px solid rgba(255,255,255,0.05);
-                border-radius: 12px;
-                padding: 16px;
-            }
-            .chat-bubble-user {
-                background: linear-gradient(135deg, #00d4ff, #0066aa);
-                color: white;
-                padding: 12px 18px;
-                border-radius: 18px 18px 4px 18px;
-                max-width: 80%;
-                margin-left: auto;
-                margin-bottom: 8px;
-            }
-            .chat-bubble-ai {
-                background: rgba(255,255,255,0.05);
-                color: #e8edf5;
-                padding: 12px 18px;
-                border-radius: 18px 18px 18px 4px;
-                max-width: 80%;
-                margin-right: auto;
-                margin-bottom: 8px;
-                border: 1px solid rgba(255,255,255,0.05);
-            }
-            .tier-badge {
-                padding: 4px 12px;
-                border-radius: 20px;
-                font-size: 10px;
-                font-weight: 700;
-                text-transform: uppercase;
-            }
-            @media (max-width: 768px) {
-                .stSidebar {
-                    width: 280px !important;
-                }
-            }
+            * { font-family: 'Inter', sans-serif; }
+            .stApp { background: #0a0a0f; }
+            .stSidebar { background: rgba(255,255,255,0.02) !important; border-right: 1px solid rgba(255,255,255,0.05) !important; }
+            .stButton > button { background: linear-gradient(135deg, #ffd700, #ff8800); color: #0a0a0f; border: none; border-radius: 12px; font-weight: 700; padding: 10px 20px; transition: all 0.3s ease; width: 100%; }
+            .stButton > button:hover { transform: scale(1.02); box-shadow: 0 0 30px rgba(255,215,0,0.2); }
+            .stMetric > div { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); border-radius: 12px; padding: 12px; }
+            ::-webkit-scrollbar { width: 4px; }
+            ::-webkit-scrollbar-thumb { background: #ffd700; border-radius: 10px; }
+            .glass { background: rgba(255,255,255,0.02); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 16px; }
+            .chat-bubble-user { background: linear-gradient(135deg, #00d4ff, #0066aa); color: white; padding: 12px 18px; border-radius: 18px 18px 4px 18px; max-width: 80%; margin-left: auto; margin-bottom: 8px; }
+            .chat-bubble-ai { background: rgba(255,255,255,0.05); color: #e8edf5; padding: 12px 18px; border-radius: 18px 18px 18px 4px; max-width: 80%; margin-right: auto; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.05); }
+            .tier-badge { padding: 4px 12px; border-radius: 20px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+            @media (max-width: 768px) { .stSidebar { width: 280px !important; } }
         </style>
     """, unsafe_allow_html=True)
 
@@ -1232,13 +1123,6 @@ def login_ui():
                     <p style="color:#8a8a9a; font-size:14px;">230+ Ciri AI · Semakan Data</p>
                     <p style="color:#5a5a6a; font-size:11px;">🔑 Admin: joe.adie77711@gmail.com</p>
                 </div>
-                <button class="social-btn" style="display:flex; align-items:center; justify-content:center; gap:12px; width:100%; padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.03); color:#e8edf5; font-weight:600; font-size:14px; cursor:pointer; transition:all 0.3s ease; margin:6px 0; border-color:#ea433522;" onclick="window.location.href='#'">
-                    <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/google/google-original.svg" style="width:20px;height:20px;"> Continue with Google
-                </button>
-                <button class="social-btn" style="display:flex; align-items:center; justify-content:center; gap:12px; width:100%; padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.03); color:#e8edf5; font-weight:600; font-size:14px; cursor:pointer; transition:all 0.3s ease; margin:6px 0; border-color:#1877f222;" onclick="window.location.href='#'">
-                    <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/facebook/facebook-original.svg" style="width:20px;height:20px;"> Continue with Facebook
-                </button>
-                <div style="display:flex; align-items:center; gap:16px; margin:20px 0; color:#3a3a4a; font-size:12px;"><span style="flex:1; height:1px; background:#2a2a3a;"></span>atau<span style="flex:1; height:1px; background:#2a2a3a;"></span></div>
                 <div style="margin:12px 0;">
                     <input type="text" placeholder="Username" id="login_user" style="width:100%; padding:14px 16px; border-radius:12px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.03); color:#e8edf5; font-size:14px; transition:all 0.3s ease; outline:none; margin-bottom:8px;">
                     <input type="password" placeholder="Password" id="login_pass" style="width:100%; padding:14px 16px; border-radius:12px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.03); color:#e8edf5; font-size:14px; transition:all 0.3s ease; outline:none; margin-bottom:8px;">
@@ -1326,129 +1210,27 @@ def main():
         st.markdown("---")
 
         nav_items = [
-            "🏠 Dashboard",
-            "💬 Chat",
-            "🧠 Pakar",
-            "📝 RPH",
-            "🎨 Art",
-            "📊 Invois",
-            "📱 WhatsApp",
-            "📱 Install App",
-            "🛡️ Security",
-            "🧠 CoT",
-            "🤖 Multi-Model",
-            "🤖 Agent",
-            "🔄 Self-Improve",
-            "📊 Predict",
-            "📊 Sentiment",
-            "📝 Summarize",
-            "🌐 Translate",
-            "🎭 Avatar",
-            "🏷️ Logo",
-            "😂 Meme",
-            "🎨 Coloring",
-            "📱 QR",
-            "📊 Barcode",
-            "📜 Certificate",
-            "📅 Timetable",
-            "📋 Attendance",
-            "📊 Performance",
-            "🃏 Flashcards",
-            "🧠 Mind Map",
-            "📝 Lesson Plan",
-            "📋 Project",
-            "✅ Tasks",
-            "💰 Expense",
-            "📊 Budget",
-            "📅 Invoice",
-            "📊 Business",
-            "📊 Poll",
-            "📋 Survey",
-            "📅 Event",
-            "🔔 Reminder",
-            "🔗 API",
-            "🔌 Webhook",
-            "💾 Backup",
-            "📊 Viz",
-            "📄 Report",
-            "📄 Export",
-            "💡 Quote",
-            "🌤️ Weather",
-            "🍳 Recipe",
-            "🏋️ Workout",
-            "🧘 Meditation",
-            "🎯 Fine-Tune",
-            "🧠 Memory",
-            "📚 Prompts",
-            "🤖 Compare",
-            "📚 Sources",
-            "✅ Fact",
-            "📊 Analytics",
-            "🏆 Gamification",
-            "🤖 Multi-Agent",
-            "📱 Mobile",
-            "🎓 AI Tutor",
-            "👥 Workspace",
-            "📋 Version",
-            "💡 Suggestions",
-            "📶 Offline",
-            "🚗 Roadtax/Saman",
-            "🆔 IC & Bantuan",
-            "💰 Bantuan Kerajaan",
-            "🏠 MyKiosk/PR1MA",
-            "🏗️ Kontraktor",
-            "🔬 Science Lab",
-            "📜 History Explorer",
-            "🌐 Language Lab",
-            "📐 Math Solver",
-            "💻 Coding Coach",
-            "🗣️ Debate",
-            "📖 Storyteller",
-            "📝 Poetry",
-            "🎬 Animation",
-            "🎨 3D Model",
-            "🎨 Tattoo",
-            "💇 Hairstyle",
-            "🏠 Interior",
-            "👗 Fashion",
-            "💼 Business Plan",
-            "📊 Market Analysis",
-            "🎯 Competitor",
-            "💰 Pricing",
-            "📊 SWOT",
-            "📄 Pitch Deck",
-            "🏋️ Fitness",
-            "🍽️ Meal Planner",
-            "😴 Sleep Tracker",
-            "🧘 Meditation",
-            "🧘 Yoga",
-            "🥗 Diet Planner",
-            "💕 Dating Coach",
-            "📱 Social Media",
-            "📱 Content Creator",
-            "📊 Influencer",
-            "😂 Meme Maker",
-            "🔥 Viral Generator",
-            "⚙️ DevOps",
-            "🐳 Docker",
-            "☸️ Kubernetes",
-            "☁️ Cloud Architect",
-            "🗄️ Database",
-            "🌐 Network",
-            "🎮 Game Master",
-            "🧩 Puzzle",
-            "📝 Quiz Master",
-            "🤔 Riddle",
-            "👻 Horror Story",
-            "😂 Comedy",
+            "🏠 Dashboard", "💬 Chat", "🧠 Pakar", "📝 RPH", "🎨 Art", "📊 Invois", "📱 WhatsApp",
+            "🚗 Roadtax/Saman", "🆔 IC & Bantuan", "💰 Bantuan Kerajaan", "🏠 MyKiosk/PR1MA", "🏗️ Kontraktor",
+            "🔬 Science Lab", "📜 History Explorer", "🌐 Language Lab", "📐 Math Solver", "💻 Coding Coach",
+            "🗣️ Debate", "📖 Storyteller", "📝 Poetry", "🎬 Animation", "🎨 3D Model", "🎨 Tattoo",
+            "💇 Hairstyle", "🏠 Interior", "👗 Fashion", "💼 Business Plan", "📊 Market Analysis",
+            "🎯 Competitor", "💰 Pricing", "📊 SWOT", "📄 Pitch Deck", "🏋️ Fitness", "🍽️ Meal Planner",
+            "😴 Sleep Tracker", "🧘 Meditation", "🧘 Yoga", "🥗 Diet Planner", "💕 Dating Coach",
+            "📱 Social Media", "📱 Content Creator", "📊 Influencer", "😂 Meme Maker", "🔥 Viral Generator",
+            "⚙️ DevOps", "🐳 Docker", "☸️ Kubernetes", "☁️ Cloud Architect", "🗄️ Database", "🌐 Network",
+            "🎮 Game Master", "🧩 Puzzle", "📝 Quiz Master", "🤔 Riddle", "👻 Horror Story", "😂 Comedy",
             "⚙️ Settings"
         ]
 
         if is_admin:
             nav_items.append("👑 Admin")
 
-        for item in nav_items:
-            if st.button(item, use_container_width=True, key=f"nav_{item}"):
+        # ============================================================
+        # 🔥 FIX: GUNA i UNTUK UNIQUE KEY
+        # ============================================================
+        for i, item in enumerate(nav_items):
+            if st.button(item, use_container_width=True, key=f"nav_{i}_{item}"):
                 st.session_state.current_tab = item
                 st.rerun()
 
@@ -1516,7 +1298,6 @@ def main():
                         add_points_override(username, 5)
                         st.rerun()
 
-    # === CIRI PAKAR, RPH, ART, INVOIS, WHATSAPP ===
     elif st.session_state.current_tab == "🧠 Pakar":
         st.markdown("### 🧠 20 Pakar")
         if not has_feature_override(username, "expert"):
@@ -1527,26 +1308,13 @@ def main():
                 st.warning(f"⚠️ Had pakar harian ({limit['limit']}) telah dicapai!")
             else:
                 experts = {
-                    "👨‍⚕️ Kesihatan": "kesihatan",
-                    "📊 Ekonomi": "ekonomi",
-                    "📜 Sejarah": "sejarah",
-                    "🔬 Sains": "sains",
-                    "📐 Matematik": "matematik",
-                    "📝 Bahasa": "bahasa",
-                    "🏗️ Seni Bina": "senibina",
-                    "🌍 Geografi": "geografi",
-                    "💡 Inovasi": "inovasi",
-                    "🤖 Robotik": "robotik",
-                    "🧬 Genetik": "genetik",
-                    "🌾 Pertanian": "pertanian",
-                    "🏥 Perubatan": "perubatan",
-                    "🔋 Tenaga": "tenaga",
-                    "📡 Komunikasi": "komunikasi",
-                    "🎮 Permainan": "permainan",
-                    "🚀 Aeroangkasa": "aeroangkasa",
-                    "🌊 Marin": "marin",
-                    "🏛️ Politik": "politik",
-                    "🧘 Psikologi": "psikologi"
+                    "👨‍⚕️ Kesihatan": "kesihatan", "📊 Ekonomi": "ekonomi", "📜 Sejarah": "sejarah",
+                    "🔬 Sains": "sains", "📐 Matematik": "matematik", "📝 Bahasa": "bahasa",
+                    "🏗️ Seni Bina": "senibina", "🌍 Geografi": "geografi", "💡 Inovasi": "inovasi",
+                    "🤖 Robotik": "robotik", "🧬 Genetik": "genetik", "🌾 Pertanian": "pertanian",
+                    "🏥 Perubatan": "perubatan", "🔋 Tenaga": "tenaga", "📡 Komunikasi": "komunikasi",
+                    "🎮 Permainan": "permainan", "🚀 Aeroangkasa": "aeroangkasa", "🌊 Marin": "marin",
+                    "🏛️ Politik": "politik", "🧘 Psikologi": "psikologi"
                 }
                 selected = st.selectbox("🎯 Pilih Pakar:", list(experts.keys()))
                 question = st.text_area("✏️ Soalan:", height=80)
@@ -1634,157 +1402,109 @@ def main():
                         clean_phone = '6' + clean_phone
                     msg_encoded = requests.utils.quote(message)
                     whatsapp_url = f"https://wa.me/{clean_phone}?text={msg_encoded}"
-                    st.markdown(f'<a href="{whatsapp_url}" target="_blank"><button class="neon-btn-sm" style="background:#25D366; color:white;">📱 Buka WhatsApp</button></a>', unsafe_allow_html=True)
+                    st.markdown(f'<a href="{whatsapp_url}" target="_blank"><button style="background:#25D366; color:white; padding:10px 20px; border:none; border-radius:10px; cursor:pointer;">📱 Buka WhatsApp</button></a>', unsafe_allow_html=True)
                     increment_usage(username, "whatsapp")
                     add_points_override(username, 15)
 
     # === CIRI SEMAKAN DATA ===
     elif st.session_state.current_tab == "🚗 Roadtax/Saman":
         check_roadtax_ui()
-
     elif st.session_state.current_tab == "🆔 IC & Bantuan":
         check_ic_ui()
-
     elif st.session_state.current_tab == "💰 Bantuan Kerajaan":
         check_bantuan_ui()
-
     elif st.session_state.current_tab == "🏠 MyKiosk/PR1MA":
         check_mykiosk_ui()
-
-    # === CIRI KONTRAKTOR ===
     elif st.session_state.current_tab == "🏗️ Kontraktor":
         contractor_management_ui()
 
-    # === CIRI TAMBAHAN 201-250 ===
+    # === CIRI TAMBAHAN ===
     elif st.session_state.current_tab == "🔬 Science Lab":
         ai_science_lab_ui()
-
     elif st.session_state.current_tab == "📜 History Explorer":
         ai_history_explorer_ui()
-
     elif st.session_state.current_tab == "🌐 Language Lab":
         ai_language_lab_ui()
-
     elif st.session_state.current_tab == "📐 Math Solver":
         ai_math_solver_ui()
-
     elif st.session_state.current_tab == "💻 Coding Coach":
         ai_coding_coach_ui()
-
     elif st.session_state.current_tab == "🗣️ Debate":
         ai_debate_partner_ui()
-
     elif st.session_state.current_tab == "📖 Storyteller":
         ai_storyteller_ui()
-
     elif st.session_state.current_tab == "📝 Poetry":
         ai_poetry_ui()
-
     elif st.session_state.current_tab == "🎬 Animation":
         ai_animation_maker_ui()
-
     elif st.session_state.current_tab == "🎨 3D Model":
         ai_3d_model_ui()
-
     elif st.session_state.current_tab == "🎨 Tattoo":
         ai_tattoo_designer_ui()
-
     elif st.session_state.current_tab == "💇 Hairstyle":
         ai_hairstyle_ui()
-
     elif st.session_state.current_tab == "🏠 Interior":
         ai_interior_designer_ui()
-
     elif st.session_state.current_tab == "👗 Fashion":
         ai_fashion_designer_ui()
-
     elif st.session_state.current_tab == "💼 Business Plan":
         ai_business_plan_ui()
-
     elif st.session_state.current_tab == "📊 Market Analysis":
         ai_market_analysis_ui()
-
     elif st.session_state.current_tab == "🎯 Competitor":
         ai_competitor_analysis_ui()
-
     elif st.session_state.current_tab == "💰 Pricing":
         ai_pricing_strategy_ui()
-
     elif st.session_state.current_tab == "📊 SWOT":
         ai_swot_analysis_ui()
-
     elif st.session_state.current_tab == "📄 Pitch Deck":
         ai_pitch_deck_ui()
-
     elif st.session_state.current_tab == "🏋️ Fitness":
         ai_fitness_tracker_ui()
-
     elif st.session_state.current_tab == "🍽️ Meal Planner":
         ai_meal_planner_ui()
-
     elif st.session_state.current_tab == "😴 Sleep Tracker":
         ai_sleep_tracker_ui()
-
     elif st.session_state.current_tab == "🧘 Meditation":
         ai_meditation_coach_ui()
-
     elif st.session_state.current_tab == "🧘 Yoga":
         ai_yoga_guide_ui()
-
     elif st.session_state.current_tab == "🥗 Diet Planner":
         ai_diet_planner_ui()
-
     elif st.session_state.current_tab == "💕 Dating Coach":
         ai_dating_coach_ui()
-
     elif st.session_state.current_tab == "📱 Social Media":
         ai_social_media_manager_ui()
-
     elif st.session_state.current_tab == "📱 Content Creator":
         ai_content_creator_ui()
-
     elif st.session_state.current_tab == "📊 Influencer":
         ai_influencer_analyzer_ui()
-
     elif st.session_state.current_tab == "😂 Meme Maker":
         ai_meme_maker_ui()
-
     elif st.session_state.current_tab == "🔥 Viral Generator":
         ai_viral_generator_ui()
-
     elif st.session_state.current_tab == "⚙️ DevOps":
         ai_devops_helper_ui()
-
     elif st.session_state.current_tab == "🐳 Docker":
         ai_docker_expert_ui()
-
     elif st.session_state.current_tab == "☸️ Kubernetes":
         ai_kubernetes_guide_ui()
-
     elif st.session_state.current_tab == "☁️ Cloud Architect":
         ai_cloud_architect_ui()
-
     elif st.session_state.current_tab == "🗄️ Database":
         ai_database_optimizer_ui()
-
     elif st.session_state.current_tab == "🌐 Network":
         ai_network_analyzer_ui()
-
     elif st.session_state.current_tab == "🎮 Game Master":
         ai_game_master_ui()
-
     elif st.session_state.current_tab == "🧩 Puzzle":
         ai_puzzle_creator_ui()
-
     elif st.session_state.current_tab == "📝 Quiz Master":
         ai_quiz_master_ui()
-
     elif st.session_state.current_tab == "🤔 Riddle":
         ai_riddle_generator_ui()
-
     elif st.session_state.current_tab == "👻 Horror Story":
         ai_horror_story_ui()
-
     elif st.session_state.current_tab == "😂 Comedy":
         ai_comedy_writer_ui()
 
@@ -1819,21 +1539,7 @@ def main():
                     save_users(users)
                     st.rerun()
 
-    # === CIRI LAIN ===
-    elif st.session_state.current_tab in [
-        "📱 Install App", "🛡️ Security", "🧠 CoT", "🤖 Multi-Model", "🤖 Agent",
-        "🔄 Self-Improve", "📊 Predict", "📊 Sentiment", "📝 Summarize", "🌐 Translate",
-        "🎭 Avatar", "🏷️ Logo", "😂 Meme", "🎨 Coloring", "📱 QR", "📊 Barcode",
-        "📜 Certificate", "📅 Timetable", "📋 Attendance", "📊 Performance",
-        "🃏 Flashcards", "🧠 Mind Map", "📝 Lesson Plan", "📋 Project", "✅ Tasks",
-        "💰 Expense", "📊 Budget", "📅 Invoice", "📊 Business", "📊 Poll", "📋 Survey",
-        "📅 Event", "🔔 Reminder", "🔗 API", "🔌 Webhook", "💾 Backup", "📊 Viz",
-        "📄 Report", "📄 Export", "💡 Quote", "🌤️ Weather", "🍳 Recipe",
-        "🏋️ Workout", "🧘 Meditation", "🎯 Fine-Tune", "🧠 Memory", "📚 Prompts",
-        "🤖 Compare", "📚 Sources", "✅ Fact", "📊 Analytics", "🏆 Gamification",
-        "🤖 Multi-Agent", "📱 Mobile", "🎓 AI Tutor", "👥 Workspace", "📋 Version",
-        "💡 Suggestions", "📶 Offline"
-    ]:
+    else:
         st.info(f"✅ {st.session_state.current_tab} — Ciri ini sedang dibangunkan.")
         add_points_override(username, 5)
 
