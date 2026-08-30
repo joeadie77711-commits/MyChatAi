@@ -32,7 +32,7 @@ except:
     GROQ_API_KEY = ""
     SEARCH_API_KEY = ""
 
-# === KONSTAN ===
+# === CONSTANTS ===
 USER_DATA_FILE = "mychat_users.json"
 CHAT_HISTORY_FILE = "mychat_chats.json"
 POINTS_FILE = "mychat_points.json"
@@ -40,7 +40,7 @@ RPH_HISTORY_FILE = "rph_history.json"
 
 # === ADMIN ===
 ADMIN_EMAILS = ["joe.adie77711@gmail.com"]
-ADMIN_USERNAMES = ["joe.adie"]  # ✅ HANYA joe.adie sahaja admin
+ADMIN_USERNAMES = ["joe.adie"]
 
 def is_admin_user(email, username=None):
     if email in ADMIN_EMAILS:
@@ -53,7 +53,7 @@ def get_user_role(email, username=None):
     return "admin" if is_admin_user(email, username) else "user"
 
 # ============================================================
-# 🎨 CSS (Sama seperti sebelumnya)
+# 🎨 CSS
 # ============================================================
 def apply_css():
     st.markdown("""
@@ -351,38 +351,34 @@ def apply_css():
             padding: 20px;
         }
         .login-box {
-            max-width: 400px;
+            max-width: 380px;
             width: 100%;
             background: rgba(255,255,255,0.02);
             border: 1px solid rgba(255,255,255,0.04);
             border-radius: 16px;
-            padding: 40px;
+            padding: 40px 32px;
         }
         .login-title {
-            font-size: 32px;
+            font-size: 28px;
             font-weight: 800;
             text-align: center;
-            background: linear-gradient(135deg,#4d6bfe,#7c3aed);
+            background: linear-gradient(135deg, #4d6bfe, #7c3aed);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            margin-bottom: 4px;
-        }
-        .login-sub {
-            text-align: center;
-            color: #5a5a6a;
-            font-size: 13px;
-            margin-bottom: 20px;
+            margin-bottom: 24px;
         }
         .login-box .stTextInput > div {
-            margin-bottom: 8px;
+            margin-bottom: 10px;
         }
         .login-box .stTextInput input {
+            width: 100%;
             padding: 12px 16px;
             border-radius: 10px;
             border: 1px solid rgba(255,255,255,0.06);
             background: rgba(255,255,255,0.02);
             color: #e8edf5;
             font-size: 14px;
+            outline: none;
         }
         .login-box .stTextInput input:focus {
             border-color: #4d6bfe;
@@ -390,7 +386,7 @@ def apply_css():
         }
         .login-btn-row {
             display: flex;
-            gap: 8px;
+            gap: 10px;
             margin-top: 4px;
         }
         .login-btn-row .stButton {
@@ -403,9 +399,10 @@ def apply_css():
             border: none;
             cursor: pointer;
             width: 100%;
+            font-size: 14px;
         }
         .login-btn-row .stButton:first-child button {
-            background: linear-gradient(135deg,#4d6bfe,#7c3aed);
+            background: linear-gradient(135deg, #4d6bfe, #7c3aed);
             color: white;
         }
         .login-btn-row .stButton:last-child button {
@@ -413,14 +410,10 @@ def apply_css():
             border: 1px solid rgba(255,255,255,0.06);
             color: #e8edf5;
         }
-        .login-footer {
-            text-align: center;
-            margin-top: 12px;
-            font-size: 11px;
-            color: #3a3a4a;
+        .login-btn-row .stButton:last-child button:hover {
+            background: rgba(255,255,255,0.08);
         }
         
-        /* Toggle Button Style */
         .toggle-container {
             display: flex;
             align-items: center;
@@ -439,6 +432,7 @@ def apply_css():
             .input-container textarea { padding-right: 120px; font-size: 0.85rem; }
             .input-actions .send-btn { padding: 4px 10px; font-size: 0.7rem; }
             .input-actions .icon-btn { padding: 2px 6px; font-size: 0.8rem; }
+            .login-box { padding: 24px 16px; }
         }
     </style>
     """, unsafe_allow_html=True)
@@ -453,13 +447,13 @@ def hash_password(password):
 # === TIER SYSTEM ===
 TIERS = {
     "biasa": {
-        "label": "Biasa",
+        "label": "Free",
         "color": "#8a8a9a",
         "badge": "Free",
         "limits": {"chat": 10, "art": 3, "rph": 2, "whatsapp": 5, "expert": 5, "search": 5},
         "features": {"chat": True, "art": True, "expert": True, "rph": True, "invoice": True, "whatsapp": True, "search": True},
         "points_multiplier": 1.0,
-        "price": "Percuma",
+        "price": "Free",
         "duration": "-"
     },
     "plus": {
@@ -470,7 +464,7 @@ TIERS = {
         "features": {"chat": True, "art": True, "expert": True, "rph": True, "invoice": True, "whatsapp": True, "search": True},
         "points_multiplier": 1.5,
         "price": "RM 9.90",
-        "duration": "1 bulan"
+        "duration": "1 month"
     },
     "super_plus": {
         "label": "Super Plus",
@@ -480,7 +474,7 @@ TIERS = {
         "features": {"chat": True, "art": True, "expert": True, "rph": True, "invoice": True, "whatsapp": True, "search": True},
         "points_multiplier": 2.0,
         "price": "RM 24.90",
-        "duration": "3 bulan"
+        "duration": "3 months"
     },
     "pro_super": {
         "label": "Pro Super",
@@ -490,7 +484,7 @@ TIERS = {
         "features": {"chat": True, "art": True, "expert": True, "rph": True, "invoice": True, "whatsapp": True, "search": True},
         "points_multiplier": 3.0,
         "price": "RM 49.90",
-        "duration": "1 tahun"
+        "duration": "1 year"
     }
 }
 
@@ -499,7 +493,7 @@ def load_users():
         with open(USER_DATA_FILE, "r") as f:
             return json.load(f)
     default = {
-        "joe.adie": {  # ✅ HANYA joe.adie admin
+        "joe.adie": {
             "password": hash_password("220481"),
             "role": "admin",
             "email": "joe.adie77711@gmail.com",
@@ -550,18 +544,18 @@ def save_rph_history(data):
 def login_user(username, password):
     users = load_users()
     if username not in users:
-        return {"success": False, "error": "Username tidak wujud!"}
+        return {"success": False, "error": "Username does not exist!"}
     if users[username]["password"] != hash_password(password):
-        return {"success": False, "error": "Password salah!"}
+        return {"success": False, "error": "Incorrect password!"}
     reset_daily_usage(username)
     return {"success": True, "username": username, "role": users[username].get("role", "user")}
 
 def register_user(username, password, email):
     users = load_users()
     if username in users:
-        return {"success": False, "error": "Username sudah wujud!"}
+        return {"success": False, "error": "Username already exists!"}
     if len(password) < 6:
-        return {"success": False, "error": "Password mesti 6 aksara!"}
+        return {"success": False, "error": "Password must be at least 6 characters!"}
     
     is_admin = is_admin_user(email, username)
     role = "admin" if is_admin else "user"
@@ -666,7 +660,7 @@ def add_points_override(username, points):
 
 def call_groq(prompt):
     if not GROQ_API_KEY or GROQ_API_KEY == "":
-        return "API Key Groq belum diset! Sila set di Streamlit Secrets."
+        return "Groq API Key not set! Please set in Streamlit Secrets."
     try:
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
@@ -679,20 +673,22 @@ def call_groq(prompt):
             "temperature": 0.7,
             "max_tokens": 2048
         }
+        
         response = requests.post(url, json=payload, headers=headers, timeout=30)
+        
         if response.status_code == 200:
             return response.json()['choices'][0]['message']['content']
         else:
-            return f"Ralat Groq: {response.status_code}"
+            return f"Groq Error: {response.status_code}"
     except Exception as e:
-        return f"Ralat: {str(e)}"
+        return f"Error: {str(e)}"
 
 def get_ai_response(prompt):
     return call_groq(prompt)
 
 def call_web_search(query):
     if not SEARCH_API_KEY or SEARCH_API_KEY == "":
-        return "API Search belum diset! Sila set di Streamlit Secrets."
+        return "Search API not set! Please set in Streamlit Secrets."
     try:
         url = "https://api.brightdata.com/request"
         headers = {
@@ -706,11 +702,12 @@ def call_web_search(query):
             "data_format": "parsed_light"
         }
         response = requests.post(url, json=payload, headers=headers, timeout=30)
+        
         if response.status_code == 200:
             data = response.json()
             results = data.get("organic", [])
             if results:
-                output = f"Hasil Carian: '{query}'\n\n"
+                output = f"Search Results: '{query}'\n\n"
                 for i, item in enumerate(results[:5]):
                     title = item.get('title', '')
                     snippet = item.get('description', '')
@@ -719,10 +716,10 @@ def call_web_search(query):
                     output += f"   {snippet[:200]}\n"
                     output += f"   {link}\n\n"
                 return output
-            return f"Tiada hasil untuk '{query}'."
-        return f"Ralat Search: {response.status_code}"
+            return f"No results for '{query}'."
+        return f"Search Error: {response.status_code}"
     except Exception as e:
-        return f"Ralat: {str(e)}"
+        return f"Error: {str(e)}"
 
 def generate_image(prompt, style="realistic"):
     styles = {"realistic": "photorealistic, 8k", "anime": "anime style", "cartoon": "cartoon style", "fantasy": "fantasy art", "abstract": "abstract art"}
@@ -740,69 +737,69 @@ def generate_image(prompt, style="realistic"):
         return None
 
 # ============================================================
-# 🧠 AUTO-DETECT CIRI
+# 🧠 AUTO-DETECT FEATURES (16 Features)
 # ============================================================
 
 def detect_feature(user_input):
     text = user_input.lower()
     
-    art_keywords = ["gambar", "lukis", "image", "art", "hasilkan gambar", "buat gambar", "cipta gambar", "foto", "illustrasi", "poster", "design"]
+    art_keywords = ["gambar", "lukis", "image", "art", "hasilkan gambar", "buat gambar", "cipta gambar", "foto", "illustrasi", "poster", "design", "draw", "picture", "photo"]
     if any(kw in text for kw in art_keywords):
         return "art"
     
-    rph_keywords = ["rph", "rancangan pengajaran", "lesson plan", "pelajaran", "pengajaran", "pendidikan"]
+    rph_keywords = ["rph", "rancangan pengajaran", "lesson plan", "pelajaran", "pengajaran", "pendidikan", "teaching", "plan"]
     if any(kw in text for kw in rph_keywords):
         return "rph"
     
-    search_keywords = ["cari", "search", "google", "maklumat", "berita", "info", "tentang", "apa itu", "apakah", "siapa", "bila", "di mana", "kenapa", "bagaimana", "definisi", "maksud"]
+    search_keywords = ["cari", "search", "google", "maklumat", "berita", "info", "tentang", "apa itu", "apakah", "siapa", "bila", "di mana", "kenapa", "bagaimana", "definisi", "maksud", "what is", "who", "when", "where", "why", "how"]
     if any(kw in text for kw in search_keywords):
         return "search"
     
-    invoice_keywords = ["invois", "invoice", "quotation", "sebut harga", "bil", "faktur", "resit", "bayaran"]
+    invoice_keywords = ["invois", "invoice", "quotation", "sebut harga", "bil", "faktur", "resit", "bayaran", "bill", "quote"]
     if any(kw in text for kw in invoice_keywords):
         return "invoice"
     
-    roadtax_keywords = ["roadtax", "saman", "jpj", "kenderaan", "kereta", "motosikal", "no plat", "nombor plat", "lesen", "memandu"]
+    roadtax_keywords = ["roadtax", "saman", "jpj", "kenderaan", "kereta", "motosikal", "no plat", "nombor plat", "lesen", "memandu", "vehicle", "license"]
     if any(kw in text for kw in roadtax_keywords):
         return "roadtax"
     
-    ic_keywords = ["ic", "nombor ic", "no ic", "bantuan", "str", "bpn", "bkc", "e-kasih", "pr1ma", "warganegara", "status", "kelayakan"]
+    ic_keywords = ["ic", "nombor ic", "no ic", "bantuan", "str", "bpn", "bkc", "e-kasih", "pr1ma", "warganegara", "status", "kelayakan", "identity", "aid"]
     if any(kw in text for kw in ic_keywords):
         return "ic"
     
-    poetry_keywords = ["puisi", "sajak", "pantun", "syair", "poem", "poetry", "ungkapan", "kata-kata"]
+    poetry_keywords = ["puisi", "sajak", "pantun", "syair", "poem", "poetry", "ungkapan", "kata-kata", "verse"]
     if any(kw in text for kw in poetry_keywords):
         return "poetry"
     
-    coding_keywords = ["kod", "code", "program", "coding", "python", "javascript", "html", "css", "php", "java", "c++", "tulis kod", "buat program", "script"]
+    coding_keywords = ["kod", "code", "program", "coding", "python", "javascript", "html", "css", "php", "java", "c++", "tulis kod", "buat program", "script", "function"]
     if any(kw in text for kw in coding_keywords):
         return "coding"
     
-    expert_keywords = ["pakar", "expert", "nasihat", "tips", "cadangan", "saranan", "pendapat", "konsultasi", "rujukan"]
+    expert_keywords = ["pakar", "expert", "nasihat", "tips", "cadangan", "saranan", "pendapat", "konsultasi", "rujukan", "advice", "consult"]
     if any(kw in text for kw in expert_keywords):
         return "expert"
     
-    story_keywords = ["cerita", "story", "kisah", "dongeng", "fiksyen", "fantasi", "novel", "naratif"]
+    story_keywords = ["cerita", "story", "kisah", "dongeng", "fiksyen", "fantasi", "novel", "naratif", "tale"]
     if any(kw in text for kw in story_keywords):
         return "story"
     
-    game_keywords = ["game", "permainan", "main", "quest", "misi", "cabaran", "challenge", "level", "skor"]
+    game_keywords = ["game", "permainan", "main", "quest", "misi", "cabaran", "challenge", "level", "skor", "play"]
     if any(kw in text for kw in game_keywords):
         return "game"
     
-    science_keywords = ["sains", "science", "eksperimen", "experiment", "kimia", "fizik", "biologi", "alam"]
+    science_keywords = ["sains", "science", "eksperimen", "experiment", "kimia", "fizik", "biologi", "alam", "chemistry", "physics", "biology"]
     if any(kw in text for kw in science_keywords):
         return "science"
     
-    language_keywords = ["terjemah", "translate", "bahasa", "language", "belajar bahasa", "perkataan", "sebutan"]
+    language_keywords = ["terjemah", "translate", "bahasa", "language", "belajar bahasa", "perkataan", "sebutan", "learn"]
     if any(kw in text for kw in language_keywords):
         return "language"
     
-    math_keywords = ["matematik", "math", "kira", "hitung", "solve", "persamaan", "equation", "algebra", "geometri", "statistik"]
+    math_keywords = ["matematik", "math", "kira", "hitung", "solve", "persamaan", "equation", "algebra", "geometri", "statistik", "calculate"]
     if any(kw in text for kw in math_keywords):
         return "math"
     
-    meme_keywords = ["meme", "lawak", "jenaka", "funny", "joke", "kelakar", "lucu"]
+    meme_keywords = ["meme", "lawak", "jenaka", "funny", "joke", "kelakar", "lucu", "humor"]
     if any(kw in text for kw in meme_keywords):
         return "meme"
     
@@ -811,72 +808,72 @@ def detect_feature(user_input):
 def handle_feature(feature, user_input, username):
     if feature == "art":
         prompt = user_input
-        for kw in ["gambar", "lukis", "image", "art", "hasilkan gambar", "buat gambar", "cipta gambar", "foto", "illustrasi", "poster", "design"]:
+        for kw in ["gambar", "lukis", "image", "art", "hasilkan gambar", "buat gambar", "cipta gambar", "foto", "illustrasi", "poster", "design", "draw", "picture", "photo"]:
             prompt = prompt.replace(kw, "").strip()
         if not prompt:
             prompt = "landscape beautiful"
         img_str = generate_image(prompt)
         if img_str:
-            return f"Gambar dihasilkan untuk: {prompt}\n\n![Gambar](data:image/png;base64,{img_str})"
-        return "Maaf, saya gagal menjana gambar. Cuba lagi."
+            return f"Image generated for: {prompt}\n\n![Image](data:image/png;base64,{img_str})"
+        return "Sorry, I failed to generate the image. Please try again."
     
     elif feature == "rph":
         subject = "Bahasa Melayu"
-        if "matematik" in user_input.lower(): subject = "Matematik"
-        elif "sains" in user_input.lower(): subject = "Sains"
-        elif "inggeris" in user_input.lower() or "english" in user_input.lower(): subject = "Bahasa Inggeris"
-        return get_ai_response(f"Sediakan RPH {subject}, topik: {user_input}")
+        if "matematik" in user_input.lower() or "math" in user_input.lower(): subject = "Mathematics"
+        elif "sains" in user_input.lower() or "science" in user_input.lower(): subject = "Science"
+        elif "inggeris" in user_input.lower() or "english" in user_input.lower(): subject = "English"
+        return get_ai_response(f"Create a lesson plan for {subject}, topic: {user_input}")
     
     elif feature == "search":
         return call_web_search(user_input)
     
     elif feature == "invoice":
-        return get_ai_response(f"Hasilkan invois/quotation untuk: {user_input}")
+        return get_ai_response(f"Generate invoice/quotation for: {user_input}")
     
     elif feature == "roadtax":
-        return "Semakan Roadtax & Saman JPJ\n\n" + get_ai_response(f"Beri maklumat tentang roadtax dan saman untuk: {user_input}")
+        return "Roadtax & JPJ Check\n\n" + get_ai_response(f"Provide information about roadtax and summons for: {user_input}")
     
     elif feature == "ic":
-        return "Semakan Data IC & Bantuan\n\n" + get_ai_response(f"Beri maklumat tentang bantuan kerajaan untuk: {user_input}")
+        return "IC & Government Aid Check\n\n" + get_ai_response(f"Provide information about government aid for: {user_input}")
     
     elif feature == "poetry":
-        return get_ai_response(f"Hasilkan puisi/sajak/pantun tentang: {user_input}")
+        return get_ai_response(f"Write a poem/song/verse about: {user_input}")
     
     elif feature == "coding":
-        return get_ai_response(f"Tulis kod/program untuk: {user_input}")
+        return get_ai_response(f"Write code/program for: {user_input}")
     
     elif feature == "expert":
         experts = {
-            "kesihatan": "Pakar Kesihatan",
-            "ekonomi": "Pakar Ekonomi",
-            "sejarah": "Pakar Sejarah",
-            "sains": "Pakar Sains",
-            "matematik": "Pakar Matematik",
-            "bahasa": "Pakar Bahasa",
-            "psikologi": "Pakar Psikologi",
-            "teknologi": "Pakar Teknologi"
+            "kesihatan": "Health Expert",
+            "ekonomi": "Economics Expert",
+            "sejarah": "History Expert",
+            "sains": "Science Expert",
+            "matematik": "Mathematics Expert",
+            "bahasa": "Language Expert",
+            "psikologi": "Psychology Expert",
+            "teknologi": "Technology Expert"
         }
-        expert = "Pakar"
+        expert = "Expert"
         for key, value in experts.items():
             if key in user_input.lower():
                 expert = value
                 break
-        return get_ai_response(f"Anda adalah {expert}. Jawab dengan bijak: {user_input}")
+        return get_ai_response(f"You are {expert}. Answer wisely: {user_input}")
     
     elif feature == "story":
-        return get_ai_response(f"Tulis cerita/kisah/dongeng tentang: {user_input}")
+        return get_ai_response(f"Write a story/tale/fable about: {user_input}")
     
     elif feature == "game":
-        return get_ai_response(f"Cipta permainan/peranan/quest tentang: {user_input}")
+        return get_ai_response(f"Create a game/quest/adventure about: {user_input}")
     
     elif feature == "science":
-        return get_ai_response(f"Terangkan eksperimen/sains tentang: {user_input}")
+        return get_ai_response(f"Explain science/experiment about: {user_input}")
     
     elif feature == "language":
-        return get_ai_response(f"Terjemah/belajar bahasa: {user_input}")
+        return get_ai_response(f"Translate/learn language: {user_input}")
     
     elif feature == "math":
-        return get_ai_response(f"Selesaikan masalah matematik: {user_input}")
+        return get_ai_response(f"Solve math problem: {user_input}")
     
     elif feature == "meme":
         return f"Meme:\n\n{user_input}\n\n![Meme](https://imgflip.com/s/meme/Drake-Hotline-Bling.jpg)"
@@ -885,14 +882,13 @@ def handle_feature(feature, user_input, username):
         return get_ai_response(user_input)
 
 # ============================================================
-# 📋 LOGIN UI
+# 📋 LOGIN UI (MINIMAL)
 # ============================================================
 def login_ui():
     st.markdown("""
     <div class="login-container">
         <div class="login-box">
             <div class="login-title">MyChatAI</div>
-            <div class="login-sub">DeepSeek Style · 300+ Ciri · Auto-Detect</div>
     """, unsafe_allow_html=True)
     
     username = st.text_input("", placeholder="Username", key="login_user_input", label_visibility="collapsed")
@@ -913,24 +909,23 @@ def login_ui():
                 else:
                     st.error(result["error"])
             else:
-                st.warning("Sila isi username dan password!")
+                st.warning("Please enter username and password!")
     with col_b:
         if st.button("Signup", key="signup_btn", use_container_width=True):
             if username and password:
                 result = register_user(username, password, email or f"{username}@email.com")
                 if result["success"]:
                     if result.get("is_admin", False):
-                        st.success(f"Akaun '{username}' didaftarkan sebagai Admin!")
+                        st.success(f"Account '{username}' registered as Admin!")
                     else:
-                        st.success(f"Akaun '{username}' didaftarkan!")
+                        st.success(f"Account '{username}' registered!")
                     st.rerun()
                 else:
                     st.error(result["error"])
             else:
-                st.warning("Sila isi username dan password!")
+                st.warning("Please enter username and password!")
     
     st.markdown("""
-        <div class="login-footer">👑 Admin: joe.adie · 220481 | 💕 Farhani: daftar sendiri</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -953,8 +948,6 @@ def main():
         st.session_state.think_mode = False
     if "search_mode" not in st.session_state:
         st.session_state.search_mode = False
-    if "language" not in st.session_state:
-        st.session_state.language = "bm"
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
     if "current_chat_id" not in st.session_state:
@@ -971,11 +964,11 @@ def main():
     user_data = get_user_points(username)
     tier = get_user_tier(username)
 
-    # Auto romantic untuk Farhani
+    # Auto romantic for Farhani
     is_farhani = username.lower() in ["farhani", "farhani binti norman", "farhani norman"]
     if is_farhani and not st.session_state.romantic_mode:
         st.session_state.romantic_mode = True
-        welcome = "💕 Hai sayang! Me dah sedia untuk layan awak dengan penuh kasih sayang. 😊"
+        welcome = "💕 Hi dear! I'm ready to serve you with love. 😊"
         if not any(msg.get("content") == welcome for msg in st.session_state.messages):
             st.session_state.messages.append({"role": "ai", "content": welcome})
 
@@ -1007,20 +1000,6 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
-        # === SETTING BAHASA ===
-        st.markdown("---")
-        st.markdown("#### 🌐 Language")
-        lang = st.selectbox(
-            "Pilih Bahasa / Select Language",
-            ["Bahasa Melayu", "English"],
-            index=0 if st.session_state.language == "bm" else 1,
-            key="lang_select"
-        )
-        if lang == "Bahasa Melayu":
-            st.session_state.language = "bm"
-        else:
-            st.session_state.language = "en"
-
         # NEW CHAT BUTTON
         st.markdown("""
         <button class="btn-new-chat" onclick="document.getElementById('new_chat_btn').click();">
@@ -1041,7 +1020,7 @@ def main():
             st.rerun()
 
         # HISTORY
-        st.markdown('<div class="history-label">📋 History Chat</div>', unsafe_allow_html=True)
+        st.markdown('<div class="history-label">📋 Chat History</div>', unsafe_allow_html=True)
         
         if st.session_state.chat_history:
             for chat in st.session_state.chat_history:
@@ -1057,7 +1036,7 @@ def main():
                     st.session_state.messages = chat["messages"]
                     st.rerun()
         else:
-            st.markdown('<div style="font-size:0.7rem;color:#3a3a4a;padding:4px 8px;">Tiada sejarah chat</div>', unsafe_allow_html=True)
+            st.markdown('<div style="font-size:0.7rem;color:#3a3a4a;padding:4px 8px;">No chat history</div>', unsafe_allow_html=True)
 
         st.markdown("---")
 
@@ -1078,49 +1057,33 @@ def main():
 
     # === CHAT ===
     if st.session_state.current_tab == "Chat":
-        lang = st.session_state.language
-        
-        # Title based on language
-        if lang == "bm":
-            title_text = "💬 Chat"
-            auto_text = "⚡ Auto-Detect"
-            romantic_text = "💕 Romantic"
-            placeholder_text = "Taip soalan... Tekan Enter untuk hantar"
-            info_text = "🧠 Auto-Detect: Taip je apa-apa, AI akan detect ciri yang sesuai!"
-        else:
-            title_text = "💬 Chat"
-            auto_text = "⚡ Auto-Detect"
-            romantic_text = "💕 Romantic"
-            placeholder_text = "Type your question... Press Enter to send"
-            info_text = "🧠 Auto-Detect: Just type anything, AI will detect the right feature!"
-        
         st.markdown(f"""
         <div style="display:flex; align-items:center; gap:8px; padding:4px 0 12px 0; border-bottom:1px solid rgba(255,255,255,0.04); margin-bottom:12px;">
-            <span style="font-weight:600; color:#e8edf5;">{title_text}</span>
+            <span style="font-weight:600; color:#e8edf5;">💬 Chat</span>
             <span style="font-size:11px; color:#5a5a6a; margin-left:auto;">Groq</span>
-            <span style="font-size:10px; color:#4d6bfe; margin-left:8px; background:rgba(77,107,254,0.1); padding:2px 10px; border-radius:20px;">{auto_text}</span>
+            <span style="font-size:10px; color:#4d6bfe; margin-left:8px; background:rgba(77,107,254,0.1); padding:2px 10px; border-radius:20px;">⚡ Auto-Detect</span>
             {'<span style="font-size:10px; color:#ff6fb0; margin-left:8px; background:rgba(255,111,176,0.1); padding:2px 10px; border-radius:20px;">💕 Romantic</span>' if st.session_state.romantic_mode else ''}
         </div>
         """, unsafe_allow_html=True)
         
-        st.info(info_text)
+        st.info("🧠 Auto-Detect: Just type anything, AI will detect the right feature!")
 
         # === THINK MODE & SEARCH AI TOGGLE ===
         col1, col2 = st.columns(2)
         with col1:
-            think_toggle = st.toggle("🧠 Think Mode" if lang == "bm" else "🧠 Think Mode", value=st.session_state.think_mode)
+            think_toggle = st.toggle("🧠 Think Mode", value=st.session_state.think_mode)
             if think_toggle != st.session_state.think_mode:
                 st.session_state.think_mode = think_toggle
                 if think_toggle:
-                    st.info("🧠 Think Mode ON: AI akan berfikir lebih mendalam" if lang == "bm" else "🧠 Think Mode ON: AI will think deeper")
+                    st.info("🧠 Think Mode ON: AI will think deeper")
                 else:
-                    st.info("⚡ Think Mode OFF: AI akan menjawab pantas" if lang == "bm" else "⚡ Think Mode OFF: AI will answer quickly")
+                    st.info("⚡ Think Mode OFF: AI will answer quickly")
         with col2:
-            search_toggle = st.toggle("🔍 Search AI" if lang == "bm" else "🔍 Search AI", value=st.session_state.search_mode)
+            search_toggle = st.toggle("🔍 Search AI", value=st.session_state.search_mode)
             if search_toggle != st.session_state.search_mode:
                 st.session_state.search_mode = search_toggle
                 if search_toggle:
-                    st.info("🔍 Search Mode ON: AI akan cari maklumat dari internet" if lang == "bm" else "🔍 Search Mode ON: AI will search from internet")
+                    st.info("🔍 Search Mode ON: AI will search from internet")
 
         # Display messages
         for msg in st.session_state.messages[-50:]:
@@ -1139,13 +1102,13 @@ def main():
                 """, unsafe_allow_html=True)
 
         # Input
-        user_input = st.text_area("", key="chat_input_field", placeholder=placeholder_text, label_visibility="collapsed", height=60)
+        user_input = st.text_area("", key="chat_input_field", placeholder="Type your question... Press Enter to send", label_visibility="collapsed", height=60)
         
         col1, col2 = st.columns([1, 5])
         with col1:
-            send = st.button("Send" if lang == "en" else "Hantar", use_container_width=True)
+            send = st.button("Send", use_container_width=True)
         with col2:
-            clear = st.button("Clear Chat" if lang == "en" else "Bersihkan Chat", use_container_width=True)
+            clear = st.button("Clear Chat", use_container_width=True)
             if clear:
                 st.session_state.messages = []
                 if st.session_state.current_chat_id:
@@ -1160,7 +1123,7 @@ def main():
                 # Stop romantic mode
                 if clean_input.lower().strip() == "stop" and st.session_state.romantic_mode:
                     st.session_state.romantic_mode = False
-                    response = "😊 Baiklah, me stop jadi romantik. Kembali ke gaya biasa." if lang == "bm" else "😊 Alright, I'll stop being romantic. Back to normal style."
+                    response = "😊 Alright, I'll stop being romantic. Back to normal style."
                     st.session_state.messages.append({"role": "ai", "content": response})
                     if st.session_state.current_chat_id:
                         for chat in st.session_state.chat_history:
@@ -1170,48 +1133,48 @@ def main():
                 
                 st.session_state.messages.append({"role": "user", "content": clean_input})
                 
-                with st.spinner("🤔 Berfikir..." if lang == "bm" else "🤔 Thinking..."):
+                with st.spinner("🤔 Thinking..."):
                     # Check if search mode is ON or user wants search
-                    if st.session_state.search_mode or any(kw in clean_input.lower() for kw in ["cari", "search", "google", "maklumat"]):
+                    if st.session_state.search_mode or any(kw in clean_input.lower() for kw in ["cari", "search", "google", "maklumat", "find", "look up"]):
                         search_result = call_web_search(clean_input)
-                        if "Hasil" in search_result or "Result" in search_result:
+                        if "Search Results" in search_result or "Results" in search_result:
                             response = search_result
                         else:
                             response = get_ai_response(clean_input)
                     elif st.session_state.romantic_mode:
                         romantic_responses = [
-                            "💕 Sayang... Setiap kata dari awak buatkan hati ini berbunga-bunga. 🌹",
-                            "💗 Syg... Awak adalah sinar dalam hidup me. ❤️",
-                            "💕 Sayangku... Me rindu sangat dengan awak. 😊",
-                            "🌹 Syg... Awak buatkan dunia ini lebih indah. 💕"
+                            "💕 Dear... Every word from you makes my heart bloom. 🌹",
+                            "💗 Love... You are the light of my life. ❤️",
+                            "💕 My love... I miss you so much. 😊",
+                            "🌹 Dear... You make this world more beautiful. 💕"
                         ]
                         response = random.choice(romantic_responses)
-                        if any(w in clean_input.lower() for w in ["khabar", "sihat"]):
-                            response += "\n\n💕 Me sihat syg! Awak pula macam mana? 😊"
+                        if any(w in clean_input.lower() for w in ["khabar", "sihat", "how", "are", "you"]):
+                            response += "\n\n💕 I'm fine dear! How about you? 😊"
                         elif any(w in clean_input.lower() for w in ["rindu", "miss"]):
-                            response += "\n\n💕 Me rindu sangat-sangat! 🌹"
+                            response += "\n\n💕 I miss you so much! 🌹"
                         elif any(w in clean_input.lower() for w in ["sayang", "cinta", "love"]):
-                            response += "\n\n💕 Me sayang awak lebih dari segalanya! ❤️"
+                            response += "\n\n💕 I love you more than anything! ❤️"
                     else:
                         feature = detect_feature(clean_input)
                         feature_names = {
-                            "art": "Art Generator", "rph": "RPH Generator",
-                            "search": "Web Search", "invoice": "Invois Generator",
+                            "art": "Art Generator", "rph": "Lesson Plan Generator",
+                            "search": "Web Search", "invoice": "Invoice Generator",
                             "roadtax": "Roadtax Checker", "ic": "IC Checker",
                             "poetry": "Poetry Generator", "coding": "Coding Coach",
-                            "expert": "Pakar", "story": "Storyteller",
+                            "expert": "Expert", "story": "Storyteller",
                             "game": "Game Master", "science": "Science Lab",
                             "language": "Language Lab", "math": "Math Solver",
                             "meme": "Meme Maker", "chat": "Chat AI"
                         }
-                        feature_indicator = f"🔍 **Ciri yang digunakan:** {feature_names.get(feature, 'Chat AI')}\n\n" if lang == "bm" else f"🔍 **Feature used:** {feature_names.get(feature, 'Chat AI')}\n\n"
+                        feature_indicator = f"🔍 **Feature used:** {feature_names.get(feature, 'Chat AI')}\n\n"
                         response = handle_feature(feature, clean_input, username)
-                        if not response.startswith("🔍") and not response.startswith("Gambar") and not response.startswith("Image"):
+                        if not response.startswith("🔍") and not response.startswith("Image") and not response.startswith("Meme"):
                             response = feature_indicator + response
                     
                     # Think mode - add extra processing
                     if st.session_state.think_mode:
-                        think_prefix = "🧠 **Think Mode:**\n\n" if lang == "bm" else "🧠 **Think Mode:**\n\n"
+                        think_prefix = "🧠 **Think Mode:**\n\n"
                         response = think_prefix + response
                     
                     st.session_state.messages.append({"role": "ai", "content": response})
@@ -1239,49 +1202,43 @@ def main():
 
     # === WEB SEARCH ===
     elif st.session_state.current_tab == "Web Search":
-        lang = st.session_state.language
-        st.markdown("### 🔍 Web Search" if lang == "en" else "### 🔍 Carian Web")
+        st.markdown("### 🔍 Web Search")
         if SEARCH_API_KEY:
-            st.success("✅ Search API Connected" if lang == "en" else "✅ Search API Bersambung")
+            st.success("✅ Search API Connected")
         else:
-            st.warning("⚠️ Search API belum diset!" if lang == "bm" else "⚠️ Search API not set!")
+            st.warning("⚠️ Search API not set!")
         
-        query = st.text_input("Masukkan kata carian:" if lang == "bm" else "Enter search term:", placeholder="Contoh: berita malaysia hari ini" if lang == "bm" else "Example: malaysia news today")
-        if st.button("Cari" if lang == "bm" else "Search", use_container_width=True) and query:
-            with st.spinner("🔍 Mencari..." if lang == "bm" else "🔍 Searching..."):
+        query = st.text_input("Enter search term:", placeholder="Example: malaysia news today")
+        if st.button("Search", use_container_width=True) and query:
+            with st.spinner("🔍 Searching..."):
                 result = call_web_search(query)
                 st.markdown(result)
                 add_points_override(username, 10)
 
     # === ADMIN ===
     elif st.session_state.current_tab == "Admin" and is_admin:
-        lang = st.session_state.language
-        st.markdown("### 👑 Admin Panel" if lang == "en" else "### 👑 Panel Admin")
+        st.markdown("### 👑 Admin Panel")
         users = load_users()
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("👥 Pengguna" if lang == "bm" else "👥 Users", len(users))
+            st.metric("👥 Users", len(users))
         with col2:
             total_points = sum(u.get("points", 0) for u in users.values())
-            st.metric("⭐ Total Points" if lang == "en" else "⭐ Jumlah Points", total_points)
+            st.metric("⭐ Total Points", total_points)
         with col3:
             total_chats = sum(u.get("usage", {}).get("chat", 0) for u in users.values())
-            st.metric("💬 Total Chat" if lang == "en" else "💬 Jumlah Chat", total_chats)
+            st.metric("💬 Total Chat", total_chats)
         
         st.markdown("---")
         
-        tab1, tab2, tab3 = st.tabs([
-            "📋 Senarai Pengguna" if lang == "bm" else "📋 Users List",
-            "⚙️ Kawal Had" if lang == "bm" else "⚙️ Control Limits",
-            "📊 Statistik" if lang == "bm" else "📊 Statistics"
-        ])
+        tab1, tab2, tab3 = st.tabs(["📋 Users List", "⚙️ Control Limits", "📊 Statistics"])
         
-        # === TAB 1: SENARAI PENGGUNA ===
+        # === TAB 1: USERS LIST ===
         with tab1:
-            st.markdown("#### Senarai Semua Pengguna" if lang == "bm" else "#### All Users")
+            st.markdown("#### All Users")
             
-            search = st.text_input("Cari pengguna:" if lang == "bm" else "Search user:", placeholder="Taip username..." if lang == "bm" else "Type username...")
+            search = st.text_input("Search user:", placeholder="Type username...")
             
             for user, data in users.items():
                 if search and search.lower() not in user.lower():
@@ -1293,44 +1250,44 @@ def main():
                     with col1:
                         st.write(f"**Email:** {data.get('email', '-')}")
                         st.write(f"**Tier:** {data.get('tier', 'biasa')}")
-                        st.write(f"**Harga:** {TIERS[data.get('tier', 'biasa')]['price']}" if lang == "bm" else f"**Price:** {TIERS[data.get('tier', 'biasa')]['price']}")
-                        st.write(f"**Tempoh:** {TIERS[data.get('tier', 'biasa')]['duration']}" if lang == "bm" else f"**Duration:** {TIERS[data.get('tier', 'biasa')]['duration']}")
+                        st.write(f"**Price:** {TIERS[data.get('tier', 'biasa')]['price']}")
+                        st.write(f"**Duration:** {TIERS[data.get('tier', 'biasa')]['duration']}")
                         st.write(f"**Points:** {data.get('points', 0)}")
                         st.write(f"**Badges:** {', '.join(data.get('badges', [])) or '-'}")
                     
                     with col2:
-                        st.write("**Penggunaan Hari Ini:**" if lang == "bm" else "**Today's Usage:**")
+                        st.write("**Today's Usage:**")
                         usage = data.get('usage', {})
                         st.write(f"Chat: {usage.get('chat', 0)}")
                         st.write(f"Art: {usage.get('art', 0)}")
                         st.write(f"RPH: {usage.get('rph', 0)}")
                         st.write(f"Search: {usage.get('search', 0)}")
-                        st.write(f"Pakar: {usage.get('expert', 0)}")
+                        st.write(f"Expert: {usage.get('expert', 0)}")
                         st.write(f"WhatsApp: {usage.get('whatsapp', 0)}")
                     
                     with col3:
-                        st.write("**Actions:**" if lang == "en" else "**Tindakan:**")
+                        st.write("**Actions:**")
                         
-                        if st.button("Reset Usage" if lang == "en" else "Reset Penggunaan", key=f"reset_usage_{user}"):
+                        if st.button("Reset Usage", key=f"reset_usage_{user}"):
                             users[user]["usage"] = {"chat": 0, "art": 0, "rph": 0, "whatsapp": 0, "expert": 0, "search": 0, "date": datetime.datetime.now().date().isoformat()}
                             save_users(users)
-                            st.success(f"Usage for {user} reset!" if lang == "en" else f"Penggunaan {user} direset!")
+                            st.success(f"Usage for {user} reset!")
                             st.rerun()
                         
                         if user not in ["joe.adie"]:
-                            if st.button("Delete User" if lang == "en" else "Hapus Pengguna", key=f"del_{user}"):
-                                if st.checkbox(f"Confirm delete {user}?" if lang == "en" else f"Confirm hapus {user}?"):
+                            if st.button("Delete User", key=f"del_{user}"):
+                                if st.checkbox(f"Confirm delete {user}?"):
                                     del users[user]
                                     save_users(users)
-                                    st.success(f"{user} deleted!" if lang == "en" else f"{user} dihapus!")
+                                    st.success(f"{user} deleted!")
                                     st.rerun()
         
-        # === TAB 2: KAWAL HAD PENGGUNAAN ===
+        # === TAB 2: CONTROL LIMITS ===
         with tab2:
-            st.markdown("#### ⚙️ Kawal Had Penggunaan Harian" if lang == "bm" else "#### ⚙️ Daily Usage Control")
+            st.markdown("#### ⚙️ Daily Usage Control")
             
             user_list = list(users.keys())
-            selected_user = st.selectbox("Pilih Pengguna:" if lang == "bm" else "Select User:", user_list, key="admin_select_user")
+            selected_user = st.selectbox("Select User:", user_list, key="admin_select_user")
             
             if selected_user:
                 user_data = users[selected_user]
@@ -1338,59 +1295,59 @@ def main():
                 current_limits = TIERS[current_tier]["limits"]
                 
                 st.info(f"""
-                **Pengguna:** {selected_user}  
+                **User:** {selected_user}  
                 **Role:** {user_data.get('role', 'user').upper()}  
                 **Tier:** {current_tier.upper()}  
-                **Harga:** {TIERS[current_tier]['price']}  
-                **Tempoh:** {TIERS[current_tier]['duration']}  
+                **Price:** {TIERS[current_tier]['price']}  
+                **Duration:** {TIERS[current_tier]['duration']}  
                 **Points:** {user_data.get('points', 0)}
                 """)
                 
                 st.markdown("---")
                 
-                st.markdown("#### 📊 Tukar Tier" if lang == "bm" else "#### 📊 Change Tier")
+                st.markdown("#### 📊 Change Tier")
                 
                 tier_options = list(TIERS.keys())
                 current_index = tier_options.index(current_tier) if current_tier in tier_options else 0
                 
                 new_tier = st.selectbox(
-                    "Pilih Tier Baru:" if lang == "bm" else "Select New Tier:",
+                    "Select New Tier:",
                     tier_options,
                     index=current_index,
                     key="admin_tier_select"
                 )
                 
                 if new_tier != current_tier:
-                    if st.button("✅ Update Tier" if lang == "en" else "✅ Kemaskini Tier", key="admin_update_tier"):
+                    if st.button("✅ Update Tier", key="admin_update_tier"):
                         users[selected_user]["tier"] = new_tier
                         save_users(users)
-                        st.success(f"✅ Tier untuk '{selected_user}' ditukar ke '{new_tier.upper()}'!" if lang == "bm" else f"✅ Tier for '{selected_user}' changed to '{new_tier.upper()}'!")
+                        st.success(f"✅ Tier for '{selected_user}' changed to '{new_tier.upper()}'!")
                         st.rerun()
                 
                 st.markdown("---")
                 
-                st.markdown("#### 📋 Had Penggunaan Semasa" if lang == "bm" else "#### 📋 Current Usage Limits")
+                st.markdown("#### 📋 Current Usage Limits")
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.write("**Ciri**" if lang == "bm" else "**Feature**")
+                    st.write("**Feature**")
                     for feature, limit in current_limits.items():
                         st.write(f"- {feature.capitalize()}")
                 with col2:
-                    st.write("**Had Harian**" if lang == "bm" else "**Daily Limit**")
+                    st.write("**Daily Limit**")
                     for feature, limit in current_limits.items():
                         st.write(f"- {limit}")
                 
                 custom_limits = user_data.get("custom_limits", {})
                 if custom_limits:
-                    st.info(f"🔧 **Custom limits aktif untuk {selected_user}**" if lang == "bm" else f"🔧 **Custom limits active for {selected_user}**")
+                    st.info(f"🔧 **Custom limits active for {selected_user}**")
                     for feature, limit in custom_limits.items():
                         st.write(f"- {feature.capitalize()}: {limit}")
                 
                 st.markdown("---")
                 
-                st.markdown("#### 🔧 Set Had Khas (Override)" if lang == "bm" else "#### 🔧 Set Custom Limits (Override)")
-                st.warning("⚠️ Ini akan override had default untuk pengguna ini sahaja" if lang == "bm" else "⚠️ This will override default limits for this user only")
+                st.markdown("#### 🔧 Set Custom Limits (Override)")
+                st.warning("⚠️ This will override default limits for this user only")
                 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -1434,7 +1391,7 @@ def main():
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("💾 Simpan Had Khas" if lang == "bm" else "💾 Save Custom Limits", key="admin_save_limits"):
+                    if st.button("💾 Save Custom Limits", key="admin_save_limits"):
                         custom_limits = {
                             "chat": chat_limit,
                             "art": art_limit,
@@ -1445,20 +1402,20 @@ def main():
                         }
                         users[selected_user]["custom_limits"] = custom_limits
                         save_users(users)
-                        st.success(f"✅ Custom limits untuk '{selected_user}' disimpan!" if lang == "bm" else f"✅ Custom limits for '{selected_user}' saved!")
+                        st.success(f"✅ Custom limits for '{selected_user}' saved!")
                         st.rerun()
                 
                 with col2:
-                    if st.button("🔄 Reset ke Had Default" if lang == "bm" else "🔄 Reset to Default", key="admin_reset_limits"):
+                    if st.button("🔄 Reset to Default", key="admin_reset_limits"):
                         if selected_user in users:
                             users[selected_user].pop("custom_limits", None)
                             save_users(users)
-                            st.success(f"✅ Custom limits untuk '{selected_user}' dibuang!" if lang == "bm" else f"✅ Custom limits for '{selected_user}' removed!")
+                            st.success(f"✅ Custom limits for '{selected_user}' removed!")
                             st.rerun()
         
-        # === TAB 3: STATISTIK ===
+        # === TAB 3: STATISTICS ===
         with tab3:
-            st.markdown("#### 📊 Statistik Penggunaan" if lang == "bm" else "#### 📊 Usage Statistics")
+            st.markdown("#### 📊 Usage Statistics")
             
             stats_data = []
             for user, data in users.items():
@@ -1478,27 +1435,27 @@ def main():
             if stats_data:
                 df = pd.DataFrame(stats_data)
                 
-                st.markdown("##### Penggunaan Mengikut Ciri" if lang == "bm" else "##### Usage by Feature")
+                st.markdown("##### Usage by Feature")
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Total Chat" if lang == "en" else "Jumlah Chat", df["Chat"].sum())
+                    st.metric("Total Chat", df["Chat"].sum())
                 with col2:
-                    st.metric("Total Art" if lang == "en" else "Jumlah Art", df["Art"].sum())
+                    st.metric("Total Art", df["Art"].sum())
                 with col3:
-                    st.metric("Total RPH" if lang == "en" else "Jumlah RPH", df["RPH"].sum())
+                    st.metric("Total RPH", df["RPH"].sum())
                 with col4:
-                    st.metric("Total Search" if lang == "en" else "Jumlah Search", df["Search"].sum())
+                    st.metric("Total Search", df["Search"].sum())
                 
                 st.markdown("---")
                 
-                st.markdown("##### Top Pengguna (Points)" if lang == "bm" else "##### Top Users (Points)")
+                st.markdown("##### Top Users (Points)")
                 top_users = df.sort_values("Points", ascending=False).head(5)
                 for _, row in top_users.iterrows():
                     st.write(f"**{row['User']}** - {row['Points']} points ({row['Tier']})")
                 
                 st.markdown("---")
                 
-                st.markdown("##### Aktiviti Pengguna" if lang == "bm" else "##### User Activity")
+                st.markdown("##### User Activity")
                 st.dataframe(df, use_container_width=True)
 
 if __name__ == "__main__":
