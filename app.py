@@ -1,642 +1,66 @@
-# mychat_ultimate_pro_v35.py
+# mychat_ultimate_pro_v41.1.py
 import streamlit as st
 import datetime
 import json
 import os
+import base64
 import requests
 import time
 import random
 import hashlib
 import uuid
 import re
-from PIL import Image
 from io import BytesIO
+from PIL import Image
 import pandas as pd
-import base64
 
 # === PAGE CONFIG ===
 st.set_page_config(
-    page_title="MyChatAI",
-    page_icon="",
+    page_title="MyChatAI Pro",
+    page_icon=":material/chat:",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # === API KEYS ===
-try:
-    GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
-    GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
-    SEARCH_API_KEY = st.secrets.get("SEARCH_API_KEY", "")
-except:
-    GEMINI_API_KEY = ""
-    GROQ_API_KEY = ""
-    SEARCH_API_KEY = ""
+GROQ_API_KEY = ""
+OPENROUTER_API_KEY = ""
+CRAZYROUTER_API_KEY = "YOUR_CRAZYROUTER_API_KEY"
 
 # === CONSTANTS ===
 USER_DATA_FILE = "mychat_users.json"
 CHAT_HISTORY_FILE = "mychat_chats.json"
 POINTS_FILE = "mychat_points.json"
 RPH_HISTORY_FILE = "rph_history.json"
+USAGE_FILE = "mychat_usage.json"
+ADMIN_EMAIL = "joe.adie77711@gmail.com"
+MAX_FREE_REQUESTS = 1000
 
-# === ADMIN ===
-ADMIN_EMAILS = ["joe.adie77711@gmail.com"]
-ADMIN_USERNAMES = ["joe.adie"]
-
-def is_admin_user(email, username=None):
-    if email in ADMIN_EMAILS:
-        return True
-    if username and username in ADMIN_USERNAMES:
-        return True
-    return False
-
-def get_user_role(email, username=None):
-    return "admin" if is_admin_user(email, username) else "user"
-
-# ============================================================
-# 🎨 CSS WITH MOBILE OPTIMIZATION
-# ============================================================
-def apply_css():
-    st.markdown("""
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-        * { font-family: 'Inter', sans-serif; margin: 0; padding: 0; box-sizing: border-box; }
-        .stApp { background: #0d0d0d; }
-        
-        .stSidebar {
-            background: rgba(255,255,255,0.02) !important;
-            border-right: 1px solid rgba(255,255,255,0.04) !important;
-            padding: 20px 16px !important;
-            overflow-y: auto;
-        }
-        
-        .logo-text {
-            font-size: 1.3rem;
-            font-weight: 800;
-            text-align: center;
-            padding: 8px 4px 16px 4px;
-            border-bottom: 1px solid rgba(255,255,255,0.04);
-            margin-bottom: 16px;
-        }
-        .logo-text .brand {
-            background: linear-gradient(135deg, #4d6bfe, #7c3aed);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        .logo-text .version {
-            background: linear-gradient(135deg, #4d6bfe, #7c3aed);
-            color: white;
-            font-size: 0.5rem;
-            padding: 2px 8px;
-            border-radius: 30px;
-            -webkit-text-fill-color: white;
-            font-weight: 600;
-            margin-left: 4px;
-        }
-        
-        .user-card {
-            background: rgba(255,255,255,0.03);
-            border-radius: 12px;
-            padding: 14px;
-            text-align: center;
-            border: 1px solid rgba(255,255,255,0.04);
-            margin-bottom: 12px;
-        }
-        .user-card .username {
-            font-weight: 600;
-            font-size: 0.95rem;
-            color: #e8edf5;
-            margin: 2px 0;
-        }
-        .user-card .role {
-            font-size: 0.55rem;
-            color: #5a5a6a;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .user-card .badges {
-            display: flex;
-            gap: 4px;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin-top: 4px;
-        }
-        .badge-item {
-            padding: 2px 10px;
-            border-radius: 20px;
-            font-size: 0.5rem;
-            font-weight: 600;
-        }
-        .badge-tier { background: #4d6bfe; color: white; }
-        .badge-points { background: linear-gradient(135deg,#4d6bfe,#7c3aed); color: white; }
-        .badge-level { background: rgba(255,255,255,0.06); color: #8a8a9a; }
-        .badge-admin { background: #7c3aed; color: white; }
-        .badge-romantic { background: #ff6fb0; color: white; }
-        
-        .btn-new-chat {
-            background: linear-gradient(135deg, #4d6bfe, #7c3aed);
-            color: white;
-            border: none;
-            border-radius: 10px;
-            font-weight: 600;
-            padding: 10px 16px;
-            width: 100%;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            margin-bottom: 12px;
-            font-size: 0.9rem;
-        }
-        .btn-new-chat:hover {
-            transform: scale(1.01);
-            box-shadow: 0 4px 20px rgba(77,107,254,0.2);
-        }
-        
-        .history-label {
-            font-size: 0.6rem;
-            color: #5a5a6a;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            padding: 8px 4px 4px 4px;
-            font-weight: 700;
-        }
-        
-        .history-item {
-            padding: 6px 10px;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: 0.2s;
-            font-size: 0.75rem;
-            color: #8a8a9a;
-            margin-bottom: 2px;
-            border: 1px solid transparent;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .history-item:hover {
-            background: rgba(255,255,255,0.04);
-            color: #e8edf5;
-        }
-        .history-item.active {
-            background: rgba(255,255,255,0.04);
-            color: #e8edf5;
-            border-color: rgba(255,255,255,0.04);
-        }
-        .history-item .del {
-            color: #5a5a6a;
-            cursor: pointer;
-            font-size: 0.6rem;
-            padding: 2px 6px;
-            border-radius: 30px;
-        }
-        .history-item .del:hover {
-            background: #ff6fd8;
-            color: white;
-        }
-        
-        .stButton > button {
-            background: transparent;
-            color: #e8edf5;
-            border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 10px;
-            font-weight: 500;
-            padding: 8px 16px;
-            transition: all 0.2s ease;
-            width: 100%;
-            font-size: 0.85rem;
-        }
-        .stButton > button:hover {
-            background: rgba(255,255,255,0.04);
-            border-color: rgba(255,255,255,0.1);
-        }
-        
-        .message-row {
-            display: flex;
-            max-width: 85%;
-            animation: fadeUp 0.3s ease;
-            margin-bottom: 8px;
-        }
-        .message-row.user {
-            align-self: flex-end;
-            justify-content: flex-end;
-        }
-        .message-row.ai {
-            align-self: flex-start;
-            justify-content: flex-start;
-        }
-        
-        .message-bubble {
-            padding: 10px 16px;
-            border-radius: 14px;
-            line-height: 1.6;
-            font-size: 0.9rem;
-            word-break: break-word;
-            max-width: 100%;
-        }
-        .message-row.user .message-bubble {
-            background: linear-gradient(135deg, #4d6bfe, #7c3aed);
-            color: white;
-            border-bottom-right-radius: 4px;
-        }
-        .message-row.ai .message-bubble {
-            background: rgba(255,255,255,0.03);
-            color: #e8edf5;
-            border: 1px solid rgba(255,255,255,0.04);
-            border-bottom-left-radius: 4px;
-        }
-        .message-row.ai.romantic .message-bubble {
-            border-color: #ff6fb0;
-            background: linear-gradient(135deg, #1a0a1a, #2a1a2a);
-        }
-        .message-row.ai.romantic .message-bubble p {
-            color: #ffb0d0;
-        }
-        
-        .message-bubble p { margin: 2px 0; }
-        .message-bubble a { color: #4d6bfe; text-decoration: none; }
-        .message-bubble a:hover { text-decoration: underline; }
-        
-        .message-bubble pre {
-            background: #0d0d0d;
-            padding: 12px 16px;
-            border-radius: 8px;
-            overflow-x: auto;
-            margin: 6px 0;
-            border: 1px solid rgba(255,255,255,0.04);
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.8rem;
-            line-height: 1.6;
-            color: #e8edf5;
-        }
-        
-        .input-container {
-            position: relative;
-            margin-top: 8px;
-        }
-        .input-container textarea {
-            width: 100%;
-            background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 12px;
-            color: #e8edf5;
-            font-size: 0.9rem;
-            padding: 12px 16px;
-            padding-right: 140px;
-            resize: none;
-            min-height: 52px;
-            max-height: 150px;
-            font-family: 'Inter', sans-serif;
-            outline: none;
-            transition: border-color 0.2s ease;
-        }
-        .input-container textarea:focus {
-            border-color: rgba(77,107,254,0.3);
-        }
-        .input-container textarea::placeholder {
-            color: #5a5a6a;
-        }
-        
-        .input-actions {
-            position: absolute;
-            right: 8px;
-            bottom: 8px;
-            display: flex;
-            gap: 4px;
-            align-items: center;
-        }
-        .input-actions .icon-btn {
-            background: transparent;
-            border: none;
-            color: #5a5a6a;
-            cursor: pointer;
-            padding: 4px 8px;
-            border-radius: 6px;
-            font-size: 0.9rem;
-            transition: all 0.2s ease;
-        }
-        .input-actions .icon-btn:hover {
-            color: #e8edf5;
-            background: rgba(255,255,255,0.04);
-        }
-        .input-actions .send-btn {
-            background: linear-gradient(135deg, #4d6bfe, #7c3aed);
-            border: none;
-            color: white;
-            padding: 6px 14px;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 0.8rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        .input-actions .send-btn:hover {
-            transform: scale(1.02);
-            box-shadow: 0 2px 12px rgba(77,107,254,0.2);
-        }
-        
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        
-        @keyframes fadeUp {
-            0% { opacity: 0; transform: translateY(8px); }
-            100% { opacity: 1; transform: translateY(0); }
-        }
-        
-        .login-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .login-box {
-            max-width: 380px;
-            width: 100%;
-            background: rgba(255,255,255,0.02);
-            border: 1px solid rgba(255,255,255,0.04);
-            border-radius: 16px;
-            padding: 40px 32px;
-        }
-        .login-title {
-            font-size: 28px;
-            font-weight: 800;
-            text-align: center;
-            background: linear-gradient(135deg, #4d6bfe, #7c3aed);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 24px;
-        }
-        .login-box .stTextInput > div {
-            margin-bottom: 10px;
-        }
-        .login-box .stTextInput input {
-            width: 100%;
-            padding: 12px 16px;
-            border-radius: 10px;
-            border: 1px solid rgba(255,255,255,0.06);
-            background: rgba(255,255,255,0.02);
-            color: #e8edf5;
-            font-size: 14px;
-            outline: none;
-        }
-        .login-box .stTextInput input:focus {
-            border-color: #4d6bfe;
-            box-shadow: 0 0 0 2px rgba(77,107,254,0.1);
-        }
-        .login-btn-row {
-            display: flex;
-            gap: 10px;
-            margin-top: 4px;
-        }
-        .login-btn-row .stButton {
-            flex: 1;
-        }
-        .login-btn-row .stButton button {
-            padding: 12px;
-            border-radius: 10px;
-            font-weight: 600;
-            border: none;
-            cursor: pointer;
-            width: 100%;
-            font-size: 14px;
-        }
-        .login-btn-row .stButton:first-child button {
-            background: linear-gradient(135deg, #4d6bfe, #7c3aed);
-            color: white;
-        }
-        .login-btn-row .stButton:last-child button {
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(255,255,255,0.06);
-            color: #e8edf5;
-        }
-        .login-btn-row .stButton:last-child button:hover {
-            background: rgba(255,255,255,0.08);
-        }
-
-        .sidebar-toggle {
-            display: none;
-            background: transparent;
-            border: none;
-            color: #e8edf5;
-            font-size: 1.2rem;
-            cursor: pointer;
-            padding: 4px 8px;
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            z-index: 999;
-        }
-        
-        /* ===== MOBILE RESPONSIVE (PORTRAIT) ===== */
-        @media (max-width: 768px) {
-            /* Sidebar - auto collapse */
-            .stSidebar {
-                position: fixed !important;
-                left: -280px !important;
-                top: 0 !important;
-                height: 100vh !important;
-                width: 280px !important;
-                z-index: 1000 !important;
-                transition: left 0.3s ease !important;
-                box-shadow: 4px 0 30px rgba(0,0,0,0.5) !important;
-                padding: 16px !important;
-                background: #0d0d0d !important;
-            }
-            .stSidebar.open {
-                left: 0 !important;
-            }
-            
-            .sidebar-toggle {
-                display: block !important;
-            }
-            
-            .stApp {
-                padding-top: 0 !important;
-            }
-            
-            .main > div {
-                padding-top: 40px !important;
-            }
-            
-            /* Chat messages - full width */
-            .message-row {
-                max-width: 95% !important;
-            }
-            .message-bubble {
-                font-size: 0.85rem !important;
-                padding: 8px 14px !important;
-                border-radius: 12px !important;
-            }
-            
-            /* Input area */
-            .input-container textarea {
-                font-size: 0.85rem !important;
-                padding: 10px 12px !important;
-                padding-right: 120px !important;
-                min-height: 44px !important;
-                max-height: 120px !important;
-                border-radius: 10px !important;
-            }
-            .input-actions .send-btn {
-                padding: 4px 10px !important;
-                font-size: 0.7rem !important;
-                border-radius: 6px !important;
-            }
-            .input-actions .icon-btn {
-                padding: 2px 6px !important;
-                font-size: 0.8rem !important;
-            }
-            
-            /* Login page */
-            .login-box {
-                padding: 24px 16px !important;
-                margin: 10px !important;
-                border-radius: 12px !important;
-            }
-            .login-title {
-                font-size: 24px !important;
-                margin-bottom: 16px !important;
-            }
-            .login-box .stTextInput input {
-                padding: 10px 14px !important;
-                font-size: 13px !important;
-            }
-            .login-btn-row .stButton button {
-                padding: 10px !important;
-                font-size: 13px !important;
-            }
-            
-            /* Header */
-            .chat-header {
-                padding: 8px 12px !important;
-                flex-wrap: wrap !important;
-            }
-            .chat-header .header-title {
-                font-size: 0.9rem !important;
-            }
-            .chat-header .header-actions button {
-                padding: 4px 8px !important;
-                font-size: 0.6rem !important;
-            }
-            .chat-header .header-actions button span {
-                display: none !important;
-            }
-            
-            /* User card */
-            .user-card {
-                padding: 10px !important;
-            }
-            .user-card .username {
-                font-size: 0.85rem !important;
-            }
-            .badge-item {
-                font-size: 0.45rem !important;
-                padding: 1px 8px !important;
-            }
-            
-            /* New Chat button */
-            .btn-new-chat {
-                padding: 8px 12px !important;
-                font-size: 0.8rem !important;
-            }
-            
-            /* History items */
-            .history-item {
-                font-size: 0.7rem !important;
-                padding: 4px 8px !important;
-            }
-            
-            /* Toggle buttons */
-            .stCheckbox label {
-                font-size: 0.75rem !important;
-            }
-            
-            /* Metrics */
-            .metric-card .value {
-                font-size: 1.2rem !important;
-            }
-            .metric-card .label {
-                font-size: 0.55rem !important;
-            }
-            
-            /* Admin panel */
-            .stTabs [data-baseweb="tab-list"] {
-                gap: 4px !important;
-            }
-            .stTabs [data-baseweb="tab"] {
-                font-size: 0.7rem !important;
-                padding: 4px 8px !important;
-            }
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
-# ============================================================
-# 📋 DATA FUNCTIONS
-# ============================================================
-
+# === HASH ===
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# === TIER SYSTEM ===
-TIERS = {
-    "biasa": {
-        "label": "Free",
-        "color": "#8a8a9a",
-        "badge": "Free",
-        "limits": {"chat": 10, "art": 3, "rph": 2, "whatsapp": 5, "expert": 5, "search": 5},
-        "features": {"chat": True, "art": True, "expert": True, "rph": True, "invoice": True, "whatsapp": True, "search": True},
-        "points_multiplier": 1.0,
-        "price": "Free",
-        "duration": "-"
-    },
-    "plus": {
-        "label": "Plus",
-        "color": "#ffd700",
-        "badge": "Plus",
-        "limits": {"chat": 25, "art": 10, "rph": 5, "whatsapp": 15, "expert": 10, "search": 15},
-        "features": {"chat": True, "art": True, "expert": True, "rph": True, "invoice": True, "whatsapp": True, "search": True},
-        "points_multiplier": 1.5,
-        "price": "RM 9.90",
-        "duration": "1 month"
-    },
-    "super_plus": {
-        "label": "Super Plus",
-        "color": "#7b2ffc",
-        "badge": "Super",
-        "limits": {"chat": 50, "art": 20, "rph": 10, "whatsapp": 30, "expert": 20, "search": 30},
-        "features": {"chat": True, "art": True, "expert": True, "rph": True, "invoice": True, "whatsapp": True, "search": True},
-        "points_multiplier": 2.0,
-        "price": "RM 24.90",
-        "duration": "3 months"
-    },
-    "pro_super": {
-        "label": "Pro Super",
-        "color": "#ff6fd8",
-        "badge": "Pro",
-        "limits": {"chat": 999, "art": 999, "rph": 999, "whatsapp": 999, "expert": 999, "search": 999},
-        "features": {"chat": True, "art": True, "expert": True, "rph": True, "invoice": True, "whatsapp": True, "search": True},
-        "points_multiplier": 3.0,
-        "price": "RM 49.90",
-        "duration": "1 year"
-    }
-}
+def is_admin_user(email):
+    return email == ADMIN_EMAIL
 
+def get_user_role(email):
+    return "admin" if is_admin_user(email) else "user"
+
+# ============================================================
+# DATA FUNCTIONS
+# ============================================================
 def load_users():
     if os.path.exists(USER_DATA_FILE):
         with open(USER_DATA_FILE, "r") as f:
             return json.load(f)
     default = {
-        "joe.adie": {
-            "password": hash_password("220481"),
+        "admin": {
+            "password": hash_password("777777"),
             "role": "admin",
-            "email": "joe.adie77711@gmail.com",
-            "tier": "pro_super",
-            "points": 1000,
-            "badges": ["Founder", "Pioneer"],
-            "custom_limits": {},
-            "settings": {"temperature": 0.7, "model": "groq", "max_tokens": 2048}
+            "email": ADMIN_EMAIL,
+            "points": 0,
+            "badges": [],
+            "settings": {"temperature": 0.7, "max_tokens": 4096}
         }
     }
     save_users(default)
@@ -676,93 +100,93 @@ def save_rph_history(data):
     with open(RPH_HISTORY_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
+# ============================================================
+# SISTEM HAD PENGGUNAAN
+# ============================================================
+def load_usage(username):
+    if os.path.exists(USAGE_FILE):
+        with open(USAGE_FILE, "r") as f:
+            data = json.load(f)
+        return data.get(username, {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year})
+    return {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year}
+
+def save_usage(username, data):
+    all_data = {}
+    if os.path.exists(USAGE_FILE):
+        with open(USAGE_FILE, "r") as f:
+            all_data = json.load(f)
+    all_data[username] = data
+    with open(USAGE_FILE, "w") as f:
+        json.dump(all_data, f, indent=2)
+
+def check_usage_limit(username):
+    user_data = load_users().get(username, {})
+    if user_data.get("role") == "admin":
+        return {"allowed": True, "used": 0, "limit": 999999}
+    usage = load_usage(username)
+    now = datetime.datetime.now()
+    if usage["month"] != now.month or usage["year"] != now.year:
+        usage = {"count": 0, "month": now.month, "year": now.year}
+        save_usage(username, usage)
+    if usage["count"] >= MAX_FREE_REQUESTS:
+        return {"allowed": False, "used": usage["count"], "limit": MAX_FREE_REQUESTS}
+    return {"allowed": True, "used": usage["count"], "limit": MAX_FREE_REQUESTS}
+
+def increment_usage(username):
+    usage = load_usage(username)
+    now = datetime.datetime.now()
+    if usage["month"] != now.month or usage["year"] != now.year:
+        usage = {"count": 0, "month": now.month, "year": now.year}
+    usage["count"] += 1
+    save_usage(username, usage)
+    return usage["count"]
+
+def get_usage_status(username):
+    usage = load_usage(username)
+    now = datetime.datetime.now()
+    if usage["month"] != now.month or usage["year"] != now.year:
+        usage = {"count": 0, "month": now.month, "year": now.year}
+        save_usage(username, usage)
+    remaining = max(0, MAX_FREE_REQUESTS - usage["count"])
+    return {
+        "used": usage["count"],
+        "limit": MAX_FREE_REQUESTS,
+        "remaining": remaining,
+        "percentage": round((usage["count"] / MAX_FREE_REQUESTS) * 100, 1)
+    }
+
+def reset_user_usage(username):
+    save_usage(username, {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year})
+    return True
+
+# ============================================================
+# AUTH FUNCTIONS
+# ============================================================
 def login_user(username, password):
     users = load_users()
     if username not in users:
-        return {"success": False, "error": "Username does not exist!"}
+        return {"success": False, "error": "Username tidak wujud"}
     if users[username]["password"] != hash_password(password):
-        return {"success": False, "error": "Incorrect password!"}
-    reset_daily_usage(username)
+        return {"success": False, "error": "Password salah"}
     return {"success": True, "username": username, "role": users[username].get("role", "user")}
 
 def register_user(username, password, email):
     users = load_users()
     if username in users:
-        return {"success": False, "error": "Username already exists!"}
+        return {"success": False, "error": "Username sudah wujud"}
     if len(password) < 6:
-        return {"success": False, "error": "Password must be at least 6 characters!"}
-    
-    is_admin = is_admin_user(email, username)
-    role = "admin" if is_admin else "user"
-    tier = "pro_super" if is_admin else "biasa"
-    points = 1000 if is_admin else 100
-    badges = ["Founder", "Pioneer"] if is_admin else []
-    
-    if username.lower() in ["farhani", "farhani binti norman", "farhani norman"]:
-        badges.append("💕 Romantic")
-    
+        return {"success": False, "error": "Password mesti 6 aksara"}
+    role = get_user_role(email)
     users[username] = {
         "password": hash_password(password),
         "role": role,
         "email": email,
-        "tier": tier,
-        "points": points,
-        "badges": badges,
-        "custom_limits": {},
-        "settings": {"temperature": 0.7, "model": "groq", "max_tokens": 2048},
-        "usage": {"chat": 0, "art": 0, "rph": 0, "whatsapp": 0, "expert": 0, "search": 0, "date": datetime.datetime.now().date().isoformat()}
+        "points": 100 if role == "user" else 0,
+        "badges": [],
+        "settings": {"temperature": 0.7, "max_tokens": 4096}
     }
     save_users(users)
-    return {"success": True, "username": username, "is_admin": is_admin}
-
-def reset_daily_usage(username):
-    users = load_users()
-    today = datetime.datetime.now().date().isoformat()
-    if username in users and users[username].get("usage", {}).get("date") != today:
-        users[username]["usage"] = {"chat": 0, "art": 0, "rph": 0, "whatsapp": 0, "expert": 0, "search": 0, "date": today}
-        save_users(users)
-
-def get_user_tier(username):
-    users = load_users()
-    return users.get(username, {}).get("tier", "biasa")
-
-def get_tier_limits(username):
-    return TIERS[get_user_tier(username)]["limits"]
-
-def get_tier_features(username):
-    return TIERS[get_user_tier(username)]["features"]
-
-def get_tier_multiplier(username):
-    return TIERS[get_user_tier(username)]["points_multiplier"]
-
-def get_tier_badge(username):
-    return TIERS[get_user_tier(username)]["badge"]
-
-def get_tier_label(username):
-    return TIERS[get_user_tier(username)]["label"]
-
-def get_tier_color(username):
-    return TIERS[get_user_tier(username)]["color"]
-
-def check_limit_override(username, feature):
-    user = load_users().get(username, {})
-    if user.get("role") == "admin":
-        return {"allowed": True, "used": 0, "limit": 999}
-    custom_limits = user.get("custom_limits", {})
-    if feature in custom_limits and custom_limits[feature] > 0:
-        limit = custom_limits[feature]
-    else:
-        limits = get_tier_limits(username)
-        limit = limits.get(feature, 10)
-    usage = user.get("usage", {})
-    used = usage.get(feature, 0)
-    return {"allowed": used < limit, "used": used, "limit": limit}
-
-def increment_usage(username, feature):
-    users = load_users()
-    if username in users:
-        users[username]["usage"][feature] = users[username]["usage"].get(feature, 0) + 1
-        save_users(users)
+    return {"success": True, "username": username}
 
 def get_user_points(username):
     data = load_points()
@@ -786,16 +210,11 @@ def add_points(username, points):
     save_points(data)
     return data[username]
 
-def add_points_override(username, points):
-    return add_points(username, int(points * get_tier_multiplier(username)))
-
 # ============================================================
-# 🤖 AI FUNCTIONS
+# AI FUNCTIONS - GROQ + DEEPSEEK-R1
 # ============================================================
-
 def call_groq(prompt):
-    if not GROQ_API_KEY or GROQ_API_KEY == "":
-        return "Groq API Key not set! Please set in Streamlit Secrets."
+    """Groq API - Cepat untuk chat biasa"""
     try:
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
@@ -803,270 +222,647 @@ def call_groq(prompt):
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "openai/gpt-oss-20b",
+            "model": "llama-3.1-70b-versatile",
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.7,
             "max_tokens": 2048
         }
-        
         response = requests.post(url, json=payload, headers=headers, timeout=30)
-        
         if response.status_code == 200:
             return response.json()['choices'][0]['message']['content']
-        else:
-            return f"Groq Error: {response.status_code}"
+        return f"Ralat Groq: {response.status_code}"
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Ralat: {str(e)}"
 
-def get_ai_response(prompt):
-    return call_groq(prompt)
-
-def call_web_search(query):
-    if not SEARCH_API_KEY or SEARCH_API_KEY == "":
-        return "Search API not set! Please set in Streamlit Secrets."
+def call_deepseek_r1(prompt):
+    """DeepSeek-R1 - Power Coding & Analisis"""
     try:
-        url = "https://api.brightdata.com/request"
+        url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
-            "Authorization": f"Bearer {SEARCH_API_KEY}",
-            "Content-Type": "application/json"
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://mychatai.com",
+            "X-Title": "MyChatAI Pro"
         }
         payload = {
-            "zone": "serp_api1",
-            "url": f"https://www.google.com/search?q={query}",
-            "format": "json",
-            "data_format": "parsed_light"
+            "model": "deepseek/deepseek-r1:free",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+            "max_tokens": 4096
         }
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
-        
+        response = requests.post(url, json=payload, headers=headers, timeout=90)
         if response.status_code == 200:
-            data = response.json()
-            results = data.get("organic", [])
-            if results:
-                output = f"Search Results: '{query}'\n\n"
-                for i, item in enumerate(results[:5]):
-                    title = item.get('title', '')
-                    snippet = item.get('description', '')
-                    link = item.get('link', '')
-                    output += f"{i+1}. {title}\n"
-                    output += f"   {snippet[:200]}\n"
-                    output += f"   {link}\n\n"
-                return output
-            return f"No results for '{query}'."
-        return f"Search Error: {response.status_code}"
+            return response.json()['choices'][0]['message']['content']
+        return f"Ralat DeepSeek: {response.status_code}"
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Ralat: {str(e)}"
 
-def generate_image(prompt, style="realistic"):
-    styles = {"realistic": "photorealistic, 8k", "anime": "anime style", "cartoon": "cartoon style", "fantasy": "fantasy art", "abstract": "abstract art"}
+def call_gemini_free(prompt):
+    """Gemini 2.0 Flash - Percuma via OpenRouter"""
     try:
-        url = f"https://image.pollinations.ai/prompt/{prompt}, {styles.get(style, styles['realistic'])}?width=1024&height=1024&nologo=true"
-        response = requests.get(url, timeout=60)
-        if response.status_code == 200:
-            img = Image.open(BytesIO(response.content))
-            buffered = BytesIO()
-            img.save(buffered, format="PNG")
-            img_str = base64.b64encode(buffered.getvalue()).decode()
-            return img_str
-        return None
-    except:
-        return None
-
-# ============================================================
-# 🧠 AUTO-DETECT FEATURES (16 Features)
-# ============================================================
-
-def detect_feature(user_input):
-    text = user_input.lower()
-    
-    art_keywords = ["gambar", "lukis", "image", "art", "hasilkan gambar", "buat gambar", "cipta gambar", "foto", "illustrasi", "poster", "design", "draw", "picture", "photo"]
-    if any(kw in text for kw in art_keywords):
-        return "art"
-    
-    rph_keywords = ["rph", "rancangan pengajaran", "lesson plan", "pelajaran", "pengajaran", "pendidikan", "teaching", "plan"]
-    if any(kw in text for kw in rph_keywords):
-        return "rph"
-    
-    search_keywords = ["cari", "search", "google", "maklumat", "berita", "info", "tentang", "apa itu", "apakah", "siapa", "bila", "di mana", "kenapa", "bagaimana", "definisi", "maksud", "what is", "who", "when", "where", "why", "how"]
-    if any(kw in text for kw in search_keywords):
-        return "search"
-    
-    invoice_keywords = ["invois", "invoice", "quotation", "sebut harga", "bil", "faktur", "resit", "bayaran", "bill", "quote"]
-    if any(kw in text for kw in invoice_keywords):
-        return "invoice"
-    
-    roadtax_keywords = ["roadtax", "saman", "jpj", "kenderaan", "kereta", "motosikal", "no plat", "nombor plat", "lesen", "memandu", "vehicle", "license"]
-    if any(kw in text for kw in roadtax_keywords):
-        return "roadtax"
-    
-    ic_keywords = ["ic", "nombor ic", "no ic", "bantuan", "str", "bpn", "bkc", "e-kasih", "pr1ma", "warganegara", "status", "kelayakan", "identity", "aid"]
-    if any(kw in text for kw in ic_keywords):
-        return "ic"
-    
-    poetry_keywords = ["puisi", "sajak", "pantun", "syair", "poem", "poetry", "ungkapan", "kata-kata", "verse"]
-    if any(kw in text for kw in poetry_keywords):
-        return "poetry"
-    
-    coding_keywords = ["kod", "code", "program", "coding", "python", "javascript", "html", "css", "php", "java", "c++", "tulis kod", "buat program", "script", "function"]
-    if any(kw in text for kw in coding_keywords):
-        return "coding"
-    
-    expert_keywords = ["pakar", "expert", "nasihat", "tips", "cadangan", "saranan", "pendapat", "konsultasi", "rujukan", "advice", "consult"]
-    if any(kw in text for kw in expert_keywords):
-        return "expert"
-    
-    story_keywords = ["cerita", "story", "kisah", "dongeng", "fiksyen", "fantasi", "novel", "naratif", "tale"]
-    if any(kw in text for kw in story_keywords):
-        return "story"
-    
-    game_keywords = ["game", "permainan", "main", "quest", "misi", "cabaran", "challenge", "level", "skor", "play"]
-    if any(kw in text for kw in game_keywords):
-        return "game"
-    
-    science_keywords = ["sains", "science", "eksperimen", "experiment", "kimia", "fizik", "biologi", "alam", "chemistry", "physics", "biology"]
-    if any(kw in text for kw in science_keywords):
-        return "science"
-    
-    language_keywords = ["terjemah", "translate", "bahasa", "language", "belajar bahasa", "perkataan", "sebutan", "learn"]
-    if any(kw in text for kw in language_keywords):
-        return "language"
-    
-    math_keywords = ["matematik", "math", "kira", "hitung", "solve", "persamaan", "equation", "algebra", "geometri", "statistik", "calculate"]
-    if any(kw in text for kw in math_keywords):
-        return "math"
-    
-    meme_keywords = ["meme", "lawak", "jenaka", "funny", "joke", "kelakar", "lucu", "humor"]
-    if any(kw in text for kw in meme_keywords):
-        return "meme"
-    
-    return "chat"
-
-def handle_feature(feature, user_input, username):
-    if feature == "art":
-        prompt = user_input
-        for kw in ["gambar", "lukis", "image", "art", "hasilkan gambar", "buat gambar", "cipta gambar", "foto", "illustrasi", "poster", "design", "draw", "picture", "photo"]:
-            prompt = prompt.replace(kw, "").strip()
-        if not prompt:
-            prompt = "landscape beautiful"
-        img_str = generate_image(prompt)
-        if img_str:
-            return f"Image generated for: {prompt}\n\n![Image](data:image/png;base64,{img_str})"
-        return "Sorry, I failed to generate the image. Please try again."
-    
-    elif feature == "rph":
-        subject = "Bahasa Melayu"
-        if "matematik" in user_input.lower() or "math" in user_input.lower(): subject = "Mathematics"
-        elif "sains" in user_input.lower() or "science" in user_input.lower(): subject = "Science"
-        elif "inggeris" in user_input.lower() or "english" in user_input.lower(): subject = "English"
-        return get_ai_response(f"Create a lesson plan for {subject}, topic: {user_input}")
-    
-    elif feature == "search":
-        return call_web_search(user_input)
-    
-    elif feature == "invoice":
-        return get_ai_response(f"Generate invoice/quotation for: {user_input}")
-    
-    elif feature == "roadtax":
-        return "Roadtax & JPJ Check\n\n" + get_ai_response(f"Provide information about roadtax and summons for: {user_input}")
-    
-    elif feature == "ic":
-        return "IC & Government Aid Check\n\n" + get_ai_response(f"Provide information about government aid for: {user_input}")
-    
-    elif feature == "poetry":
-        return get_ai_response(f"Write a poem/song/verse about: {user_input}")
-    
-    elif feature == "coding":
-        return get_ai_response(f"Write code/program for: {user_input}")
-    
-    elif feature == "expert":
-        experts = {
-            "kesihatan": "Health Expert",
-            "ekonomi": "Economics Expert",
-            "sejarah": "History Expert",
-            "sains": "Science Expert",
-            "matematik": "Mathematics Expert",
-            "bahasa": "Language Expert",
-            "psikologi": "Psychology Expert",
-            "teknologi": "Technology Expert"
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://mychatai.com",
+            "X-Title": "MyChatAI Pro"
         }
-        expert = "Expert"
-        for key, value in experts.items():
-            if key in user_input.lower():
-                expert = value
-                break
-        return get_ai_response(f"You are {expert}. Answer wisely: {user_input}")
-    
-    elif feature == "story":
-        return get_ai_response(f"Write a story/tale/fable about: {user_input}")
-    
-    elif feature == "game":
-        return get_ai_response(f"Create a game/quest/adventure about: {user_input}")
-    
-    elif feature == "science":
-        return get_ai_response(f"Explain science/experiment about: {user_input}")
-    
-    elif feature == "language":
-        return get_ai_response(f"Translate/learn language: {user_input}")
-    
-    elif feature == "math":
-        return get_ai_response(f"Solve math problem: {user_input}")
-    
-    elif feature == "meme":
-        return f"Meme:\n\n{user_input}\n\n![Meme](https://imgflip.com/s/meme/Drake-Hotline-Bling.jpg)"
-    
-    else:
-        return get_ai_response(user_input)
+        payload = {
+            "model": "google/gemini-2.0-flash-exp:free",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+            "max_tokens": 4096
+        }
+        response = requests.post(url, json=payload, headers=headers, timeout=60)
+        if response.status_code == 200:
+            return response.json()['choices'][0]['message']['content']
+        return f"Ralat Gemini: {response.status_code}"
+    except Exception as e:
+        return f"Ralat: {str(e)}"
 
 # ============================================================
-# 📋 LOGIN UI (MINIMAL)
+# SMART AI - AUTO PILIH MODEL TERBAIK
+# ============================================================
+def smart_ai(username, prompt):
+    limit_check = check_usage_limit(username)
+    if not limit_check["allowed"]:
+        return f"""
+Had Penggunaan Bulanan Telah Dicapai
+Penggunaan: {limit_check['used']}/{limit_check['limit']}
+Baki: 0 request
+Reset automatik pada: {datetime.datetime.now().replace(day=1).strftime('%d %B %Y')}
+"""
+    
+    # Detect jenis soalan
+    coding_keywords = ["kod", "coding", "python", "javascript", "program", "bug", "error", "function", "class", "algorithm", "tulis", "code"]
+    analysis_keywords = ["analisis", "mendalam", "research", "thesis", "reasoning", "logik", "kajian"]
+    
+    # Pilih model terbaik
+    if any(word in prompt.lower() for word in coding_keywords) or any(word in prompt.lower() for word in analysis_keywords):
+        response = call_deepseek_r1(prompt)
+    elif len(prompt) > 100:
+        response = call_deepseek_r1(prompt)
+    else:
+        response = call_groq(prompt)
+    
+    new_count = increment_usage(username)
+    remaining = MAX_FREE_REQUESTS - new_count
+    if "Ralat" not in response[:20]:
+        response += f"\n\n---\nPenggunaan: {new_count}/{MAX_FREE_REQUESTS} | Baki: {remaining} request"
+    return response
+
+# ============================================================
+# CSS
+# ============================================================
+def apply_css():
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+    * { font-family: 'Inter', sans-serif; }
+    .stApp { background: #0d0d0d; }
+    .stSidebar { background: rgba(255,255,255,0.02) !important; border-right: 1px solid rgba(255,255,255,0.04) !important; }
+    .stButton > button { background: linear-gradient(135deg, #4d6bfe, #7c3aed); color: white; border: none; border-radius: 10px; font-weight: 600; padding: 10px 16px; transition: all 0.2s ease; width: 100%; }
+    .stButton > button:hover { transform: scale(1.01); box-shadow: 0 4px 20px rgba(77,107,254,0.2); }
+    .stMetric > div { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.04); border-radius: 12px; padding: 12px; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+    .glass { background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.04); border-radius: 12px; padding: 16px; }
+    .chat-bubble-user { background: linear-gradient(135deg, #4d6bfe, #7c3aed); color: white; padding: 10px 16px; border-radius: 14px 14px 4px 14px; max-width: 80%; margin-left: auto; margin-bottom: 8px; }
+    .chat-bubble-ai { background: rgba(255,255,255,0.03); color: #e8edf5; padding: 10px 16px; border-radius: 14px 14px 14px 4px; max-width: 80%; margin-right: auto; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.04); }
+    .usage-progress { background: rgba(255,255,255,0.05); border-radius: 5px; height: 6px; margin-top: 4px; overflow: hidden; }
+    .usage-progress-fill { height: 6px; border-radius: 5px; transition: width 0.3s ease; }
+    @media (max-width: 768px) { .stSidebar { width: 280px !important; } }
+    </style>
+    """, unsafe_allow_html=True)
+
+# ============================================================
+# LOGIN UI
 # ============================================================
 def login_ui():
+    apply_css()
     st.markdown("""
-    <div class="login-container">
-        <div class="login-box">
-            <div class="login-title">MyChatAI</div>
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:20px;">
+        <div style="max-width:400px; width:100%; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:16px; padding:32px 24px;">
+            <div style="text-align:center; margin-bottom:20px;">
+                <h1 style="font-size:28px; font-weight:800; background:linear-gradient(135deg,#4d6bfe,#7c3aed); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">MyChatAI Pro</h1>
+                <p style="color:#8a8a9a; font-size:14px;">Groq · DeepSeek-R1 · Gemini · 1000 Request Percuma</p>
+                <p style="color:#5a5a6a; font-size:11px;">Admin: joe.adie77711@gmail.com</p>
+            </div>
+            <div style="margin:12px 0;">
+                <input type="text" placeholder="Username" id="login_user" style="width:100%; padding:12px 16px; border-radius:10px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.02); color:#e8edf5; font-size:14px; outline:none; margin-bottom:8px;">
+                <input type="password" placeholder="Password" id="login_pass" style="width:100%; padding:12px 16px; border-radius:10px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.02); color:#e8edf5; font-size:14px; outline:none; margin-bottom:8px;">
+                <input type="email" placeholder="Email" id="login_email" style="width:100%; padding:12px 16px; border-radius:10px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.02); color:#e8edf5; font-size:14px; outline:none; margin-bottom:12px;">
+                <button style="width:100%; padding:12px; background:linear-gradient(135deg,#4d6bfe,#7c3aed); border:none; border-radius:10px; font-weight:600; color:white; cursor:pointer;" onclick="document.getElementById('login_btn').click();">Login</button>
+            </div>
+            <div style="text-align:center; margin-top:12px; font-size:13px; color:#5a5a6a;">Tiada akaun? <a href="#" style="color:#4d6bfe; text-decoration:none;" onclick="document.getElementById('signup_btn').click();">Daftar Sekarang</a></div>
+        </div>
+    </div>
     """, unsafe_allow_html=True)
-    
-    username = st.text_input("", placeholder="Username", key="login_user_input", label_visibility="collapsed")
-    password = st.text_input("", placeholder="Password", type="password", key="login_pass_input", label_visibility="collapsed")
-    email = st.text_input("", placeholder="Email (optional)", key="login_email_input", label_visibility="collapsed")
-    
-    col_a, col_b = st.columns(2)
-    with col_a:
-        if st.button("Login", key="login_btn", use_container_width=True):
-            if username and password:
-                result = login_user(username, password)
-                if result["success"]:
-                    st.session_state.logged_in = True
-                    st.session_state.username = result["username"]
-                    st.session_state.role = result["role"]
-                    st.success(f"Welcome, {username}!")
-                    st.rerun()
-                else:
-                    st.error(result["error"])
-            else:
-                st.warning("Please enter username and password!")
-    with col_b:
-        if st.button("Signup", key="signup_btn", use_container_width=True):
-            if username and password:
-                result = register_user(username, password, email or f"{username}@email.com")
-                if result["success"]:
-                    if result.get("is_admin", False):
-                        st.success(f"Account '{username}' registered as Admin!")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        username = st.text_input("Username", key="login_user_input", placeholder="Masukkan username", label_visibility="collapsed")
+        password = st.text_input("Password", type="password", key="login_pass_input", placeholder="Masukkan password", label_visibility="collapsed")
+        email = st.text_input("Email", key="login_email_input", placeholder="Masukkan email", label_visibility="collapsed")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("Login", key="login_btn", use_container_width=True):
+                if username and password:
+                    result = login_user(username, password)
+                    if result["success"]:
+                        st.session_state.logged_in = True
+                        st.session_state.username = result["username"]
+                        st.session_state.role = result["role"]
+                        st.success(f"Welcome, {username}!")
+                        st.rerun()
                     else:
-                        st.success(f"Account '{username}' registered!")
-                    st.rerun()
+                        st.error(result["error"])
                 else:
-                    st.error(result["error"])
-            else:
-                st.warning("Please enter username and password!")
-    
+                    st.warning("Sila isi username dan password")
+        with col_b:
+            if st.button("Signup", key="signup_btn", use_container_width=True):
+                if username and password and email:
+                    result = register_user(username, password, email)
+                    if result["success"]:
+                        st.success(f"Akaun '{username}' didaftarkan")
+                    else:
+                        st.error(result["error"])
+                else:
+                    st.warning("Sila isi semua maklumat")
+
+# ============================================================
+# LAUNCH PAD
+# ============================================================
+def launch_pad_ui():
     st.markdown("""
+    <div style="background:linear-gradient(135deg,#4d6bfe22,#7c3aed22); border-radius:12px; padding:16px; margin-bottom:16px;">
+        <h3 style="color:#4d6bfe;">Launch Pad</h3>
+        <p style="color:#8a8a9a;">Klik mana-mana butang untuk akses ciri.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    features = [
+        "Chat", "RPH", "Art", "Video", "Music",
+        "Invois", "WhatsApp", "Neural Networks",
+        "Roadtax", "IC", "Kontraktor", "Business",
+        "Fitness", "Meditation", "Research", "Comic",
+        "Game", "Analytics"
+    ]
+    cols = st.columns(4)
+    for i, name in enumerate(features):
+        with cols[i % 4]:
+            if st.button(name, key=f"launch_{name.lower().replace(' ', '_')}", use_container_width=True):
+                st.session_state.current_tab = name
+                st.rerun()
+    username = st.session_state.username
+    status = get_usage_status(username)
+    percentage = status["percentage"]
+    color = "green" if percentage < 70 else "orange" if percentage < 90 else "red"
+    st.markdown(f"""
+    <div style="background:rgba(255,255,255,0.03); border-radius:10px; padding:12px; border:1px solid rgba(255,255,255,0.04); margin-top:12px;">
+        <div style="display:flex; justify-content:space-between;">
+            <span style="color:#8a8a9a; font-size:0.7rem;">Penggunaan Bulanan</span>
+            <span style="color:#e8edf5; font-size:0.7rem;">{status['used']} / {status['limit']}</span>
+        </div>
+        <div class="usage-progress">
+            <div class="usage-progress-fill" style="background:{color}; width:{percentage}%;"></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:0.55rem; color:#5a5a6a; margin-top:2px;">
+            <span>Baki: {status['remaining']}</span>
+            <span>Reset: {datetime.datetime.now().replace(day=1).strftime('%d/%m')}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
 # ============================================================
-# 📋 MAIN APP
+# FUNGSI CIRI
+# ============================================================
+def chat_ui():
+    st.markdown("### Chat")
+    for msg in st.session_state.messages[-20:]:
+        if msg["role"] == "user":
+            st.markdown(f'<div class="chat-bubble-user">{msg["content"]}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="chat-bubble-ai"> {msg["content"]}</div>', unsafe_allow_html=True)
+    user_input = st.text_input("Taip soalan...", key="chat_input")
+    if st.button("Hantar", use_container_width=True) and user_input:
+        st.session_state.messages.append({"role": "user", "content": user_input, "time": datetime.datetime.now().strftime("%H:%M")})
+        with st.spinner("Menganalisis..."):
+            response = smart_ai(st.session_state.username, user_input)
+        st.session_state.messages.append({"role": "ai", "content": response, "time": datetime.datetime.now().strftime("%H:%M")})
+        st.rerun()
+
+def rph_ui():
+    st.markdown("### RPH Generator")
+    col1, col2 = st.columns(2)
+    with col1:
+        subjek = st.selectbox("Subjek", ["Bahasa Melayu", "Bahasa Inggeris", "Matematik", "Sains", "Sejarah"])
+        tahun = st.selectbox("Tahun", ["Tahun 1", "Tahun 2", "Tahun 3", "Tahun 4", "Tahun 5", "Tahun 6"])
+    with col2:
+        topik = st.text_input("Topik")
+        tempoh = st.selectbox("Tempoh", ["30 minit", "60 minit"])
+    if st.button("Jana RPH", use_container_width=True) and topik:
+        rph = call_deepseek_r1(f"Sediakan RPH {subjek} Tahun {tahun}, topik {topik}, tempoh {tempoh}")
+        st.markdown(rph)
+        add_points(st.session_state.username, 20)
+
+def art_ui():
+    st.markdown("### Art Generator")
+    prompt = st.text_input("Huraikan gambar")
+    if st.button("Hasilkan", use_container_width=True) and prompt:
+        try:
+            url = f"https://image.pollinations.ai/prompt/{prompt}?width=1024&height=1024&nologo=true"
+            response = requests.get(url, timeout=60)
+            if response.status_code == 200:
+                img = Image.open(BytesIO(response.content))
+                st.image(img, use_container_width=True)
+                add_points(st.session_state.username, 15)
+            else:
+                st.error("Gagal menghasilkan gambar")
+        except:
+            st.error("Ralat")
+
+def video_ui():
+    st.markdown("### Video Generator")
+    prompt = st.text_area("Huraikan video", height=80)
+    duration = st.slider("Durasi (saat)", 3, 15, 5)
+    if st.button("Hasilkan Video", use_container_width=True) and prompt:
+        with st.spinner("Menghasilkan video..."):
+            try:
+                url = f"https://image.pollinations.ai/video?prompt={prompt}&duration={duration}"
+                response = requests.get(url, timeout=120)
+                if response.status_code == 200:
+                    st.video(response.content)
+                    st.download_button("Download Video", data=response.content, file_name="video.mp4", mime="video/mp4")
+                    add_points(st.session_state.username, 25)
+                    st.success("Video berjaya dihasilkan")
+                else:
+                    st.error("Gagal menghasilkan video")
+            except:
+                st.error("Ralat")
+
+# ============================================================
+# MUSIC GENERATOR - TTS + SUNO HYBRID
+# ============================================================
+def generate_suno_music(prompt, style="pop", instrumental=False):
+    try:
+        BASE_URL = "http://localhost:3000"
+        SESSION_ID = st.secrets.get("SUNO_SESSION_ID", "")
+        if not SESSION_ID:
+            return generate_suno_crazyrouter(prompt, style, instrumental)
+        response = requests.post(
+            f"{BASE_URL}/api/generate",
+            json={
+                "prompt": prompt,
+                "style": style,
+                "make_instrumental": instrumental,
+                "wait_audio": True
+            },
+            headers={"Cookie": f"session_id={SESSION_ID}"},
+            timeout=120
+        )
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                "success": True,
+                "audio_url": data[0]["audio_url"],
+                "title": data[0].get("title", "Lagu Suno"),
+                "lyrics": data[0].get("lyrics", "")
+            }
+        else:
+            return {"success": False, "error": f"Status: {response.status_code}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def generate_suno_crazyrouter(prompt, style="pop", instrumental=False):
+    try:
+        if not CRAZYROUTER_API_KEY or CRAZYROUTER_API_KEY == "YOUR_CRAZYROUTER_API_KEY":
+            return {"success": False, "error": "Tiada API Key Crazyrouter"}
+        BASE_URL = "https://api.crazyrouter.com"
+        response = requests.post(
+            f"{BASE_URL}/suno/submit/music",
+            headers={"Authorization": f"Bearer {CRAZYROUTER_API_KEY}"},
+            json={
+                "prompt": prompt,
+                "style": style,
+                "make_instrumental": instrumental
+            },
+            timeout=30
+        )
+        if response.status_code == 200:
+            task_id = response.json()["data"]["task_id"]
+            for _ in range(12):
+                status = requests.get(
+                    f"{BASE_URL}/suno/fetch/{task_id}",
+                    headers={"Authorization": f"Bearer {CRAZYROUTER_API_KEY}"}
+                )
+                if status.json()["data"]["status"] == "completed":
+                    tracks = status.json()["data"]["tracks"]
+                    return {
+                        "success": True,
+                        "audio_url": tracks[0]["audio_url"],
+                        "title": tracks[0]["title"],
+                        "lyrics": tracks[0]["lyrics"]
+                    }
+                time.sleep(10)
+            return {"success": False, "error": "Timeout"}
+        else:
+            return {"success": False, "error": f"Status: {response.status_code}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def music_generator_hybrid_ui():
+    st.markdown("""
+    <div style="background:linear-gradient(135deg,#4d6bfe22,#7c3aed22); border-radius:12px; padding:16px; margin-bottom:16px;">
+        <h3 style="color:#4d6bfe;">Music Generator - TTS + Suno Hybrid</h3>
+        <p style="color:#8a8a9a;">Pilih mod: TTS (Percuma) atau Suno (Lagu Sebenar)</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    mode = st.radio(
+        "Pilih Mod:",
+        ["TTS (Percuma, Bacaan Lirik)", "Suno (Lagu Sebenar, 50 kredit/hari)", "Hybrid (TTS + Suno)"],
+        index=0,
+        horizontal=True
+    )
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        prompt = st.text_area(
+            "Huraikan lagu:",
+            placeholder="Contoh: Lagu cinta yang romantik tentang bulan dan bintang",
+            height=80
+        )
+        style = st.selectbox(
+            "Gaya Muzik:",
+            ["pop", "rock", "jazz", "classical", "hip-hop", "rnb", "electronic", "acoustic", "lo-fi", "indie", "dangdut", "keroncong"]
+        )
+        with_lyrics = st.checkbox("Hasilkan Lirik", value=True)
+    with col2:
+        st.markdown("### Tetapan Lanjutan")
+        if "Suno" in mode:
+            instrumental = st.checkbox("Instrumental sahaja", value=False)
+            duration = st.selectbox("Durasi:", ["15 saat", "30 saat", "60 saat"], index=1)
+            quality = st.selectbox("Kualiti:", ["Standard", "High", "Ultra"], index=1)
+        else:
+            instrumental = False
+            duration = "30 saat"
+            quality = "Standard"
+        st.markdown("### Tips")
+        st.markdown("""
+        **TTS Mode:** Cepat, percuma, bacaan lirik
+        **Suno Mode:** Lagu sebenar, ada melodi & irama
+        **Hybrid Mode:** Dapat kedua-duanya!
+        """)
+    
+    if st.button("Hasilkan Lagu", use_container_width=True) and prompt:
+        with st.spinner("Menghasilkan lagu..."):
+            results = []
+            lyrics = ""
+            if with_lyrics:
+                lyrics_prompt = f"Tulis lirik lagu {style} tentang: {prompt}\n\nFormat: [Tajuk]\n[Verse 1]\n[Chorus]\n[Verse 2]\n[Chorus]\n[Bridge]\n[Outro]"
+                lyrics = call_deepseek_r1(lyrics_prompt)
+                st.markdown("### Lirik Lagu")
+                st.markdown(f"""
+                <div style="background:rgba(255,255,255,0.03); border-radius:10px; padding:16px; border:1px solid rgba(255,255,255,0.04); white-space:pre-wrap; font-family:monospace; line-height:1.8;">
+                {lyrics}
+                </div>
+                """, unsafe_allow_html=True)
+            
+            audio_text = lyrics if lyrics else prompt
+            
+            if "TTS" in mode:
+                try:
+                    tts_url = f"https://api.pollinations.ai/tts?text={audio_text[:500]}&voice=alloy"
+                    tts_response = requests.get(tts_url, timeout=60)
+                    if tts_response.status_code == 200:
+                        st.audio(tts_response.content, format="audio/mp3")
+                        st.download_button(
+                            "Download TTS Audio",
+                            data=tts_response.content,
+                            file_name="tts_audio.mp3",
+                            mime="audio/mpeg"
+                        )
+                        results.append("TTS")
+                        add_points(st.session_state.username, 10)
+                except Exception as e:
+                    st.error(f"TTS Ralat: {str(e)}")
+            
+            if "Suno" in mode:
+                try:
+                    suno_result = generate_suno_music(prompt, style, instrumental)
+                    if suno_result["success"]:
+                        audio_response = requests.get(suno_result["audio_url"], timeout=60)
+                        if audio_response.status_code == 200:
+                            st.audio(audio_response.content, format="audio/mp3")
+                            st.download_button(
+                                "Download Suno Audio",
+                                data=audio_response.content,
+                                file_name="suno_audio.mp3",
+                                mime="audio/mpeg"
+                            )
+                            results.append("Suno")
+                            add_points(st.session_state.username, 20)
+                        else:
+                            st.warning("Audio Suno tidak dapat dimuat turun")
+                    else:
+                        st.warning(f"Suno: {suno_result['error']}")
+                except Exception as e:
+                    st.error(f"Suno Ralat: {str(e)}")
+            
+            if results:
+                st.success(f"Berjaya: {', '.join(results)}")
+            else:
+                st.warning("Tiada audio berjaya dihasilkan")
+
+def invoice_ui():
+    st.markdown("### Invois")
+    company = st.text_input("Nama Syarikat")
+    customer = st.text_input("Nama Pelanggan")
+    desc = st.text_input("Keterangan")
+    jumlah = st.number_input("Jumlah (RM)", min_value=0.0, value=0.0)
+    if st.button("Hasilkan Invois", use_container_width=True) and company and customer:
+        st.success(f"Invois untuk {customer} berjaya dihasilkan")
+        st.markdown(f"""
+        **{company}**
+        Pelanggan: {customer}
+        Keterangan: {desc or "Perkhidmatan"}
+        Jumlah: RM {jumlah:,.2f}
+        Tarikh: {datetime.datetime.now().strftime('%d %B %Y')}
+        """)
+        add_points(st.session_state.username, 30)
+
+def whatsapp_ui():
+    st.markdown("### WhatsApp")
+    phone = st.text_input("No Telefon", placeholder="60123456789")
+    message = st.text_area("Mesej", height=100)
+    if st.button("Hantar", use_container_width=True) and phone and message:
+        clean_phone = re.sub(r'[^0-9]', '', phone)
+        if not clean_phone.startswith('6'):
+            clean_phone = '6' + clean_phone
+        msg_encoded = requests.utils.quote(message)
+        whatsapp_url = f"https://wa.me/{clean_phone}?text={msg_encoded}"
+        st.markdown(f'<a href="{whatsapp_url}" target="_blank"><button style="background:#25D366; color:white; padding:8px 16px; border:none; border-radius:8px; font-weight:600; cursor:pointer;">Buka WhatsApp</button></a>', unsafe_allow_html=True)
+        add_points(st.session_state.username, 15)
+
+def neural_ui():
+    st.markdown("### Neural Networks Expert")
+    st.markdown("""
+    Neural Networks adalah sistem komputasi yang terinspirasi dari otak manusia.
+    Komponen Utama:
+    - Input Layer
+    - Hidden Layers
+    - Output Layer
+    - Weights & Biases
+    Jenis-Jenis:
+    1. CNN - Untuk imej & video
+    2. RNN - Untuk data berurutan
+    3. LSTM - RNN dengan ingatan
+    4. Transformers - Asas ChatGPT
+    5. GANs - Menghasilkan data baru
+    """)
+
+def roadtax_ui():
+    st.markdown("### Roadtax & Saman")
+    st.info("Untuk semakan sebenar, gunakan aplikasi MyJPJ")
+    st.markdown("""
+    Simulasi:
+    - Roadtax: SAH (Tamat: 31/12/2026)
+    - Saman: 2 saman (RM 600)
+    - Insurans: AKTIF
+    """)
+
+def ic_ui():
+    st.markdown("### IC & Bantuan")
+    st.info("Untuk semakan sebenar, gunakan portal rasmi")
+    st.markdown("""
+    Simulasi:
+    - STR: LAYAK (RM 500)
+    - BPN: LAYAK (RM 1,200)
+    - BKC: LAYAK (RM 250)
+    """)
+
+def contractor_ui():
+    st.markdown("### Kontraktor & Tender")
+    tender_name = st.text_input("Nama Projek")
+    tender_budget = st.number_input("Bajet (RM)", min_value=0.0, value=0.0)
+    if st.button("Buka Tender", use_container_width=True) and tender_name and tender_budget > 0:
+        st.success(f"Tender '{tender_name}' berjaya dibuka")
+        add_points(st.session_state.username, 30)
+
+def business_ui():
+    st.markdown("### Business Tools")
+    st.markdown("""
+    - Business Plan
+    - Market Analysis
+    - SWOT Analysis
+    - Pricing Strategy
+    - Pitch Deck
+    """)
+    if st.button("Jana Business Plan", use_container_width=True):
+        response = call_deepseek_r1("Hasilkan business plan untuk startup teknologi")
+        st.markdown(response)
+        add_points(st.session_state.username, 35)
+
+def fitness_ui():
+    st.markdown("### Fitness Tracker")
+    goal = st.selectbox("Matlamat", ["Turun Berat", "Bina Otot", "Kekal Sihat"])
+    days = st.slider("Hari seminggu", 1, 7, 3)
+    if st.button("Jana Rancangan", use_container_width=True):
+        response = call_deepseek_r1(f"Hasilkan rancangan senaman untuk matlamat {goal} ({days} hari seminggu)")
+        st.markdown(response)
+        add_points(st.session_state.username, 20)
+
+def meditation_ui():
+    st.markdown("### Meditation Guide")
+    duration = st.slider("Durasi (minit)", 1, 30, 10)
+    if st.button("Mula Meditasi", use_container_width=True):
+        response = call_deepseek_r1(f"Panduan meditasi selama {duration} minit")
+        st.markdown(response)
+        add_points(st.session_state.username, 20)
+
+def research_ui():
+    st.markdown("### Research Assistant")
+    topic = st.text_input("Topik Penyelidikan")
+    if st.button("Mulakan Penyelidikan", use_container_width=True) and topic:
+        response = call_deepseek_r1(f"Buat literature review untuk topik: {topic}")
+        st.markdown(response)
+        add_points(st.session_state.username, 30)
+
+def comic_ui():
+    st.markdown("### Comic Generator")
+    title = st.text_input("Tajuk Komik")
+    if st.button("Hasilkan Komik", use_container_width=True) and title:
+        response = call_deepseek_r1(f"Hasilkan komik bertajuk: {title}")
+        st.markdown(response)
+        add_points(st.session_state.username, 30)
+
+def game_ui():
+    st.markdown("### Game Master")
+    game_type = st.selectbox("Jenis", ["Escape Room", "Murder Mystery", "Treasure Hunt", "Adventure"])
+    if st.button("Mula Permainan", use_container_width=True):
+        response = call_deepseek_r1(f"Cipta {game_type} yang menarik")
+        st.markdown(response)
+        add_points(st.session_state.username, 25)
+
+def analytics_ui():
+    st.markdown("### Analytics Dashboard")
+    users = load_users()
+    chats = load_chats()
+    points = load_points()
+    rph = load_rph_history()
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Pengguna", len(users))
+    with col2:
+        st.metric("Chat", sum(len(c) for c in chats.values()))
+    with col3:
+        st.metric("Points", sum(p.get("points", 0) for p in points.values()))
+    with col4:
+        st.metric("RPH", len(rph))
+
+# ============================================================
+# ADMIN
+# ============================================================
+def admin_ui():
+    st.markdown("### Admin Panel")
+    users = load_users()
+    st.metric("Pengguna", len(users))
+    for user, data in users.items():
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col1:
+            st.write(user)
+        with col2:
+            st.write(f"Points: {data.get('points', 0)}")
+        with col3:
+            if user != "admin" and st.button("Padam", key=f"del_{user}"):
+                del users[user]
+                save_users(users)
+                st.rerun()
+    st.markdown("---")
+    st.markdown("### Reset Penggunaan")
+    user_list = [u for u in users.keys()]
+    selected_user = st.selectbox("Pilih Pengguna", user_list)
+    if st.button("Reset Penggunaan", use_container_width=True):
+        if reset_user_usage(selected_user):
+            st.success(f"Penggunaan {selected_user} telah direset")
+
+# ============================================================
+# SETTINGS
+# ============================================================
+def settings_ui():
+    st.markdown("### Settings")
+    col1, col2 = st.columns(2)
+    with col1:
+        temp = st.slider("Temperature", 0.0, 1.0, 0.7, 0.05)
+    with col2:
+        max_tokens = st.slider("Max Tokens", 256, 4096, 2048, 256)
+    if st.button("Simpan Settings", use_container_width=True):
+        users = load_users()
+        users[st.session_state.username]["settings"] = {"temperature": temp, "max_tokens": max_tokens}
+        save_users(users)
+        st.success("Settings disimpan")
+
+# ============================================================
+# MAIN
 # ============================================================
 def main():
     if "logged_in" not in st.session_state:
@@ -1076,529 +872,118 @@ def main():
     if "messages" not in st.session_state:
         st.session_state.messages = []
     if "current_tab" not in st.session_state:
-        st.session_state.current_tab = "Chat"
-    if "romantic_mode" not in st.session_state:
-        st.session_state.romantic_mode = False
-    if "think_mode" not in st.session_state:
-        st.session_state.think_mode = False
-    if "search_mode" not in st.session_state:
-        st.session_state.search_mode = False
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
-    if "current_chat_id" not in st.session_state:
-        st.session_state.current_chat_id = None
-
+        st.session_state.current_tab = "Launch Pad"
+    
     apply_css()
-
+    
     if not st.session_state.logged_in:
         login_ui()
         return
-
+    
     username = st.session_state.username
     is_admin = st.session_state.role == "admin"
     user_data = get_user_points(username)
-    tier = get_user_tier(username)
-
-    # Auto romantic for Farhani
-    is_farhani = username.lower() in ["farhani", "farhani binti norman", "farhani norman"]
-    if is_farhani and not st.session_state.romantic_mode:
-        st.session_state.romantic_mode = True
-        welcome = "💕 Hi dear! I'm ready to serve you with love. 😊"
-        if not any(msg.get("content") == welcome for msg in st.session_state.messages):
-            st.session_state.messages.append({"role": "ai", "content": welcome})
-
-    # Sidebar toggle for mobile
-    st.markdown("""
-    <button class="sidebar-toggle" onclick="document.querySelector('.stSidebar').classList.toggle('open');">
-        ☰
-    </button>
-    """, unsafe_allow_html=True)
-
+    
     with st.sidebar:
         st.markdown(f"""
-        <div class="logo-text">
-            <span class="brand">MyChatAI</span>
-            <span class="version">v35</span>
+        <div style="text-align:center; padding:12px 0;">
+            <div style="font-weight:600; font-size:15px; color:#e8edf5;">{username}</div>
+            <div style="font-size:10px; color:#5a5a6a;">{st.session_state.role.upper()}</div>
+            <div style="margin-top:4px; display:flex; justify-content:center; gap:4px; flex-wrap:wrap;">
+                <span style="background:linear-gradient(135deg,#4d6bfe,#7c3aed); color:white; padding:2px 10px; border-radius:20px; font-size:0.55rem;">Points: {user_data['points']}</span>
+                <span style="background:rgba(255,255,255,0.06); color:#8a8a9a; padding:2px 10px; border-radius:20px; font-size:0.55rem;">Level: {user_data['level']}</span>
+            </div>
+            <div style="font-size:9px; color:#3a3a4a; margin-top:4px;">
+                {' '.join(user_data['badges'][:2])}
+            </div>
         </div>
         """, unsafe_allow_html=True)
         
+        status = get_usage_status(username)
+        percentage = status["percentage"]
+        color = "green" if percentage < 70 else "orange" if percentage < 90 else "red"
         st.markdown(f"""
-        <div class="user-card">
-            <div class="username">{username}</div>
-            <div class="role">{st.session_state.role.upper()}</div>
-            <div class="badges">
-                <span class="badge-item badge-tier">{get_tier_badge(username)}</span>
-                <span class="badge-item badge-points">⭐ {user_data['points']}</span>
-                <span class="badge-item badge-level">Lv.{user_data['level']}</span>
-                {'<span class="badge-item badge-admin">ADMIN</span>' if is_admin else ''}
-                {'<span class="badge-item badge-romantic">💕 Romantic</span>' if st.session_state.romantic_mode else ''}
+        <div style="background:rgba(255,255,255,0.03); border-radius:10px; padding:12px; border:1px solid rgba(255,255,255,0.04); margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between;">
+                <span style="color:#8a8a9a; font-size:0.7rem;">Penggunaan Bulanan</span>
+                <span style="color:#e8edf5; font-size:0.7rem;">{status['used']} / {status['limit']}</span>
             </div>
-            <div style="font-size:8px; color:#3a3a4a; margin-top:4px;">
-                {get_tier_label(username)} · {TIERS[tier]['price']} ({TIERS[tier]['duration']})
+            <div class="usage-progress">
+                <div class="usage-progress-fill" style="background:{color}; width:{percentage}%;"></div>
             </div>
-            <div style="font-size:7px; color:#3a3a4a; margin-top:2px;">
-                {TIERS[tier]['points_multiplier']}x Points
+            <div style="display:flex; justify-content:space-between; font-size:0.55rem; color:#5a5a6a; margin-top:2px;">
+                <span>Baki: {status['remaining']}</span>
+                <span>Reset: {datetime.datetime.now().replace(day=1).strftime('%d/%m')}</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
-
-        # NEW CHAT BUTTON
-        st.markdown("""
-        <button class="btn-new-chat" onclick="document.getElementById('new_chat_btn').click();">
-            ➕ New Chat
-        </button>
-        """, unsafe_allow_html=True)
         
-        if st.button("", key="new_chat_btn", use_container_width=True):
-            chat_id = str(uuid.uuid4())[:8]
-            st.session_state.chat_history.append({
-                "id": chat_id,
-                "title": f"Chat {len(st.session_state.chat_history) + 1}",
-                "messages": [],
-                "created": datetime.datetime.now().strftime("%d/%m %H:%M")
-            })
-            st.session_state.current_chat_id = chat_id
-            st.session_state.messages = []
-            st.rerun()
-
-        # HISTORY
-        st.markdown('<div class="history-label">📋 Chat History</div>', unsafe_allow_html=True)
-        
-        if st.session_state.chat_history:
-            for chat in st.session_state.chat_history:
-                active = "active" if chat["id"] == st.session_state.current_chat_id else ""
-                st.markdown(f"""
-                <div class="history-item {active}" onclick="document.getElementById('load_chat_{chat['id']}').click();">
-                    <span>{chat['title']}</span>
-                    <span style="font-size:0.6rem;color:#5a5a6a;">{chat['created']}</span>
-                </div>
-                """, unsafe_allow_html=True)
-                if st.button("", key=f"load_chat_{chat['id']}", use_container_width=True):
-                    st.session_state.current_chat_id = chat["id"]
-                    st.session_state.messages = chat["messages"]
-                    st.rerun()
-        else:
-            st.markdown('<div style="font-size:0.7rem;color:#3a3a4a;padding:4px 8px;">No chat history</div>', unsafe_allow_html=True)
-
         st.markdown("---")
-
-        nav_items = ["Chat", "Web Search"]
+        nav_items = [
+            "Launch Pad", "Chat", "RPH", "Art", "Video", "Music",
+            "Invois", "WhatsApp", "Neural Networks", "Roadtax",
+            "IC", "Kontraktor", "Business", "Fitness", "Meditation",
+            "Research", "Comic", "Game", "Analytics"
+        ]
         if is_admin:
             nav_items.append("Admin")
-
-        for i, item in enumerate(nav_items):
-            if st.button(item, use_container_width=True, key=f"nav_{i}_{item}"):
+        nav_items.append("Settings")
+        
+        for item in nav_items:
+            if st.button(item, use_container_width=True, key=f"nav_{item}"):
                 st.session_state.current_tab = item
                 st.rerun()
-
+        
         st.markdown("---")
-
-        if st.button("🚪 Logout", use_container_width=True):
+        if st.button("Logout", use_container_width=True):
             st.session_state.logged_in = False
             st.rerun()
-
-    # === CHAT ===
-    if st.session_state.current_tab == "Chat":
-        st.markdown(f"""
-        <div style="display:flex; align-items:center; gap:8px; padding:4px 0 12px 0; border-bottom:1px solid rgba(255,255,255,0.04); margin-bottom:12px;">
-            <span style="font-weight:600; color:#e8edf5;">💬 Chat</span>
-            <span style="font-size:11px; color:#5a5a6a; margin-left:auto;">Groq</span>
-            <span style="font-size:10px; color:#4d6bfe; margin-left:8px; background:rgba(77,107,254,0.1); padding:2px 10px; border-radius:20px;">⚡ Auto-Detect</span>
-            {'<span style="font-size:10px; color:#ff6fb0; margin-left:8px; background:rgba(255,111,176,0.1); padding:2px 10px; border-radius:20px;">💕 Romantic</span>' if st.session_state.romantic_mode else ''}
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.info("🧠 Auto-Detect: Just type anything, AI will detect the right feature!")
-
-        # === THINK MODE & SEARCH AI TOGGLE ===
-        col1, col2 = st.columns(2)
-        with col1:
-            think_toggle = st.toggle("🧠 Think Mode", value=st.session_state.think_mode)
-            if think_toggle != st.session_state.think_mode:
-                st.session_state.think_mode = think_toggle
-                if think_toggle:
-                    st.info("🧠 Think Mode ON: AI will think deeper")
-                else:
-                    st.info("⚡ Think Mode OFF: AI will answer quickly")
-        with col2:
-            search_toggle = st.toggle("🔍 Search AI", value=st.session_state.search_mode)
-            if search_toggle != st.session_state.search_mode:
-                st.session_state.search_mode = search_toggle
-                if search_toggle:
-                    st.info("🔍 Search Mode ON: AI will search from internet")
-
-        # Display messages
-        for msg in st.session_state.messages[-50:]:
-            if msg["role"] == "user":
-                st.markdown(f"""
-                <div class="message-row user">
-                    <div class="message-bubble">{msg["content"]}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                romantic_class = " romantic" if st.session_state.romantic_mode else ""
-                st.markdown(f"""
-                <div class="message-row ai{romantic_class}">
-                    <div class="message-bubble">{msg["content"]}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        # Input
-        user_input = st.text_area("", key="chat_input_field", placeholder="Type your question... Press Enter to send", label_visibility="collapsed", height=60)
-        
-        col1, col2 = st.columns([1, 5])
-        with col1:
-            send = st.button("Send", use_container_width=True)
-        with col2:
-            clear = st.button("Clear Chat", use_container_width=True)
-            if clear:
-                st.session_state.messages = []
-                if st.session_state.current_chat_id:
-                    for chat in st.session_state.chat_history:
-                        if chat["id"] == st.session_state.current_chat_id:
-                            chat["messages"] = []
-                st.rerun()
-        
-        if user_input and (send or (user_input.endswith('\n') and not user_input.endswith('\n\n'))):
-            clean_input = user_input.rstrip('\n')
-            if clean_input:
-                # Stop romantic mode
-                if clean_input.lower().strip() == "stop" and st.session_state.romantic_mode:
-                    st.session_state.romantic_mode = False
-                    response = "😊 Alright, I'll stop being romantic. Back to normal style."
-                    st.session_state.messages.append({"role": "ai", "content": response})
-                    if st.session_state.current_chat_id:
-                        for chat in st.session_state.chat_history:
-                            if chat["id"] == st.session_state.current_chat_id:
-                                chat["messages"] = st.session_state.messages
-                    st.rerun()
-                
-                st.session_state.messages.append({"role": "user", "content": clean_input})
-                
-                with st.spinner("🤔 Thinking..."):
-                    # Check if search mode is ON or user wants search
-                    if st.session_state.search_mode or any(kw in clean_input.lower() for kw in ["cari", "search", "google", "maklumat", "find", "look up"]):
-                        search_result = call_web_search(clean_input)
-                        if "Search Results" in search_result or "Results" in search_result:
-                            response = search_result
-                        else:
-                            response = get_ai_response(clean_input)
-                    elif st.session_state.romantic_mode:
-                        romantic_responses = [
-                            "💕 Dear... Every word from you makes my heart bloom. 🌹",
-                            "💗 Love... You are the light of my life. ❤️",
-                            "💕 My love... I miss you so much. 😊",
-                            "🌹 Dear... You make this world more beautiful. 💕"
-                        ]
-                        response = random.choice(romantic_responses)
-                        if any(w in clean_input.lower() for w in ["khabar", "sihat", "how", "are", "you"]):
-                            response += "\n\n💕 I'm fine dear! How about you? 😊"
-                        elif any(w in clean_input.lower() for w in ["rindu", "miss"]):
-                            response += "\n\n💕 I miss you so much! 🌹"
-                        elif any(w in clean_input.lower() for w in ["sayang", "cinta", "love"]):
-                            response += "\n\n💕 I love you more than anything! ❤️"
-                    else:
-                        feature = detect_feature(clean_input)
-                        feature_names = {
-                            "art": "Art Generator", "rph": "Lesson Plan Generator",
-                            "search": "Web Search", "invoice": "Invoice Generator",
-                            "roadtax": "Roadtax Checker", "ic": "IC Checker",
-                            "poetry": "Poetry Generator", "coding": "Coding Coach",
-                            "expert": "Expert", "story": "Storyteller",
-                            "game": "Game Master", "science": "Science Lab",
-                            "language": "Language Lab", "math": "Math Solver",
-                            "meme": "Meme Maker", "chat": "Chat AI"
-                        }
-                        feature_indicator = f"🔍 **Feature used:** {feature_names.get(feature, 'Chat AI')}\n\n"
-                        response = handle_feature(feature, clean_input, username)
-                        if not response.startswith("🔍") and not response.startswith("Image") and not response.startswith("Meme"):
-                            response = feature_indicator + response
-                    
-                    # Think mode - add extra processing
-                    if st.session_state.think_mode:
-                        think_prefix = "🧠 **Think Mode:**\n\n"
-                        response = think_prefix + response
-                    
-                    st.session_state.messages.append({"role": "ai", "content": response})
-                    
-                    # Save to history
-                    if st.session_state.current_chat_id:
-                        for chat in st.session_state.chat_history:
-                            if chat["id"] == st.session_state.current_chat_id:
-                                chat["messages"] = st.session_state.messages
-                                if len(chat["messages"]) > 0:
-                                    first_msg = chat["messages"][0].get("content", "")[:30]
-                                    chat["title"] = first_msg if first_msg else f"Chat"
-                    elif not st.session_state.chat_history:
-                        chat_id = str(uuid.uuid4())[:8]
-                        st.session_state.current_chat_id = chat_id
-                        st.session_state.chat_history.append({
-                            "id": chat_id,
-                            "title": clean_input[:30],
-                            "messages": st.session_state.messages,
-                            "created": datetime.datetime.now().strftime("%d/%m %H:%M")
-                        })
-                    
-                    add_points_override(username, 5)
-                    st.rerun()
-
-    # === WEB SEARCH ===
-    elif st.session_state.current_tab == "Web Search":
-        st.markdown("### 🔍 Web Search")
-        if SEARCH_API_KEY:
-            st.success("✅ Search API Connected")
-        else:
-            st.warning("⚠️ Search API not set!")
-        
-        query = st.text_input("Enter search term:", placeholder="Example: malaysia news today")
-        if st.button("Search", use_container_width=True) and query:
-            with st.spinner("🔍 Searching..."):
-                result = call_web_search(query)
-                st.markdown(result)
-                add_points_override(username, 10)
-
-    # === ADMIN ===
+    
+    # === TABS ===
+    if st.session_state.current_tab == "Launch Pad":
+        launch_pad_ui()
+    elif st.session_state.current_tab == "Chat":
+        chat_ui()
+    elif st.session_state.current_tab == "RPH":
+        rph_ui()
+    elif st.session_state.current_tab == "Art":
+        art_ui()
+    elif st.session_state.current_tab == "Video":
+        video_ui()
+    elif st.session_state.current_tab == "Music":
+        music_generator_hybrid_ui()
+    elif st.session_state.current_tab == "Invois":
+        invoice_ui()
+    elif st.session_state.current_tab == "WhatsApp":
+        whatsapp_ui()
+    elif st.session_state.current_tab == "Neural Networks":
+        neural_ui()
+    elif st.session_state.current_tab == "Roadtax":
+        roadtax_ui()
+    elif st.session_state.current_tab == "IC":
+        ic_ui()
+    elif st.session_state.current_tab == "Kontraktor":
+        contractor_ui()
+    elif st.session_state.current_tab == "Business":
+        business_ui()
+    elif st.session_state.current_tab == "Fitness":
+        fitness_ui()
+    elif st.session_state.current_tab == "Meditation":
+        meditation_ui()
+    elif st.session_state.current_tab == "Research":
+        research_ui()
+    elif st.session_state.current_tab == "Comic":
+        comic_ui()
+    elif st.session_state.current_tab == "Game":
+        game_ui()
+    elif st.session_state.current_tab == "Analytics":
+        analytics_ui()
     elif st.session_state.current_tab == "Admin" and is_admin:
-        st.markdown("### 👑 Admin Panel")
-        users = load_users()
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("👥 Users", len(users))
-        with col2:
-            total_points = sum(u.get("points", 0) for u in users.values())
-            st.metric("⭐ Total Points", total_points)
-        with col3:
-            total_chats = sum(u.get("usage", {}).get("chat", 0) for u in users.values())
-            st.metric("💬 Total Chat", total_chats)
-        
-        st.markdown("---")
-        
-        tab1, tab2, tab3 = st.tabs(["📋 Users List", "⚙️ Control Limits", "📊 Statistics"])
-        
-        # === TAB 1: USERS LIST ===
-        with tab1:
-            st.markdown("#### All Users")
-            
-            search = st.text_input("Search user:", placeholder="Type username...")
-            
-            for user, data in users.items():
-                if search and search.lower() not in user.lower():
-                    continue
-                    
-                with st.expander(f"{user} - {data.get('role', 'user').upper()}"):
-                    col1, col2, col3 = st.columns([2, 1, 1])
-                    
-                    with col1:
-                        st.write(f"**Email:** {data.get('email', '-')}")
-                        st.write(f"**Tier:** {data.get('tier', 'biasa')}")
-                        st.write(f"**Price:** {TIERS[data.get('tier', 'biasa')]['price']}")
-                        st.write(f"**Duration:** {TIERS[data.get('tier', 'biasa')]['duration']}")
-                        st.write(f"**Points:** {data.get('points', 0)}")
-                        st.write(f"**Badges:** {', '.join(data.get('badges', [])) or '-'}")
-                    
-                    with col2:
-                        st.write("**Today's Usage:**")
-                        usage = data.get('usage', {})
-                        st.write(f"Chat: {usage.get('chat', 0)}")
-                        st.write(f"Art: {usage.get('art', 0)}")
-                        st.write(f"RPH: {usage.get('rph', 0)}")
-                        st.write(f"Search: {usage.get('search', 0)}")
-                        st.write(f"Expert: {usage.get('expert', 0)}")
-                        st.write(f"WhatsApp: {usage.get('whatsapp', 0)}")
-                    
-                    with col3:
-                        st.write("**Actions:**")
-                        
-                        if st.button("Reset Usage", key=f"reset_usage_{user}"):
-                            users[user]["usage"] = {"chat": 0, "art": 0, "rph": 0, "whatsapp": 0, "expert": 0, "search": 0, "date": datetime.datetime.now().date().isoformat()}
-                            save_users(users)
-                            st.success(f"Usage for {user} reset!")
-                            st.rerun()
-                        
-                        if user not in ["joe.adie"]:
-                            if st.button("Delete User", key=f"del_{user}"):
-                                if st.checkbox(f"Confirm delete {user}?"):
-                                    del users[user]
-                                    save_users(users)
-                                    st.success(f"{user} deleted!")
-                                    st.rerun()
-        
-        # === TAB 2: CONTROL LIMITS ===
-        with tab2:
-            st.markdown("#### ⚙️ Daily Usage Control")
-            
-            user_list = list(users.keys())
-            selected_user = st.selectbox("Select User:", user_list, key="admin_select_user")
-            
-            if selected_user:
-                user_data = users[selected_user]
-                current_tier = user_data.get("tier", "biasa")
-                current_limits = TIERS[current_tier]["limits"]
-                
-                st.info(f"""
-                **User:** {selected_user}  
-                **Role:** {user_data.get('role', 'user').upper()}  
-                **Tier:** {current_tier.upper()}  
-                **Price:** {TIERS[current_tier]['price']}  
-                **Duration:** {TIERS[current_tier]['duration']}  
-                **Points:** {user_data.get('points', 0)}
-                """)
-                
-                st.markdown("---")
-                
-                st.markdown("#### 📊 Change Tier")
-                
-                tier_options = list(TIERS.keys())
-                current_index = tier_options.index(current_tier) if current_tier in tier_options else 0
-                
-                new_tier = st.selectbox(
-                    "Select New Tier:",
-                    tier_options,
-                    index=current_index,
-                    key="admin_tier_select"
-                )
-                
-                if new_tier != current_tier:
-                    if st.button("✅ Update Tier", key="admin_update_tier"):
-                        users[selected_user]["tier"] = new_tier
-                        save_users(users)
-                        st.success(f"✅ Tier for '{selected_user}' changed to '{new_tier.upper()}'!")
-                        st.rerun()
-                
-                st.markdown("---")
-                
-                st.markdown("#### 📋 Current Usage Limits")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write("**Feature**")
-                    for feature, limit in current_limits.items():
-                        st.write(f"- {feature.capitalize()}")
-                with col2:
-                    st.write("**Daily Limit**")
-                    for feature, limit in current_limits.items():
-                        st.write(f"- {limit}")
-                
-                custom_limits = user_data.get("custom_limits", {})
-                if custom_limits:
-                    st.info(f"🔧 **Custom limits active for {selected_user}**")
-                    for feature, limit in custom_limits.items():
-                        st.write(f"- {feature.capitalize()}: {limit}")
-                
-                st.markdown("---")
-                
-                st.markdown("#### 🔧 Set Custom Limits (Override)")
-                st.warning("⚠️ This will override default limits for this user only")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    chat_limit = st.number_input(
-                        "💬 Chat Limit:",
-                        min_value=0, max_value=999,
-                        value=custom_limits.get("chat", current_limits.get("chat", 10)),
-                        key="admin_chat_limit"
-                    )
-                    art_limit = st.number_input(
-                        "🎨 Art Limit:",
-                        min_value=0, max_value=999,
-                        value=custom_limits.get("art", current_limits.get("art", 3)),
-                        key="admin_art_limit"
-                    )
-                    rph_limit = st.number_input(
-                        "📝 RPH Limit:",
-                        min_value=0, max_value=999,
-                        value=custom_limits.get("rph", current_limits.get("rph", 2)),
-                        key="admin_rph_limit"
-                    )
-                with col2:
-                    search_limit = st.number_input(
-                        "🔍 Search Limit:",
-                        min_value=0, max_value=999,
-                        value=custom_limits.get("search", current_limits.get("search", 5)),
-                        key="admin_search_limit"
-                    )
-                    expert_limit = st.number_input(
-                        "🧠 Expert Limit:",
-                        min_value=0, max_value=999,
-                        value=custom_limits.get("expert", current_limits.get("expert", 5)),
-                        key="admin_expert_limit"
-                    )
-                    whatsapp_limit = st.number_input(
-                        "📱 WhatsApp Limit:",
-                        min_value=0, max_value=999,
-                        value=custom_limits.get("whatsapp", current_limits.get("whatsapp", 5)),
-                        key="admin_whatsapp_limit"
-                    )
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("💾 Save Custom Limits", key="admin_save_limits"):
-                        custom_limits = {
-                            "chat": chat_limit,
-                            "art": art_limit,
-                            "rph": rph_limit,
-                            "search": search_limit,
-                            "expert": expert_limit,
-                            "whatsapp": whatsapp_limit
-                        }
-                        users[selected_user]["custom_limits"] = custom_limits
-                        save_users(users)
-                        st.success(f"✅ Custom limits for '{selected_user}' saved!")
-                        st.rerun()
-                
-                with col2:
-                    if st.button("🔄 Reset to Default", key="admin_reset_limits"):
-                        if selected_user in users:
-                            users[selected_user].pop("custom_limits", None)
-                            save_users(users)
-                            st.success(f"✅ Custom limits for '{selected_user}' removed!")
-                            st.rerun()
-        
-        # === TAB 3: STATISTICS ===
-        with tab3:
-            st.markdown("#### 📊 Usage Statistics")
-            
-            stats_data = []
-            for user, data in users.items():
-                usage = data.get("usage", {})
-                stats_data.append({
-                    "User": user,
-                    "Chat": usage.get("chat", 0),
-                    "Art": usage.get("art", 0),
-                    "RPH": usage.get("rph", 0),
-                    "Search": usage.get("search", 0),
-                    "Expert": usage.get("expert", 0),
-                    "WhatsApp": usage.get("whatsapp", 0),
-                    "Points": data.get("points", 0),
-                    "Tier": data.get("tier", "biasa")
-                })
-            
-            if stats_data:
-                df = pd.DataFrame(stats_data)
-                
-                st.markdown("##### Usage by Feature")
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Total Chat", df["Chat"].sum())
-                with col2:
-                    st.metric("Total Art", df["Art"].sum())
-                with col3:
-                    st.metric("Total RPH", df["RPH"].sum())
-                with col4:
-                    st.metric("Total Search", df["Search"].sum())
-                
-                st.markdown("---")
-                
-                st.markdown("##### Top Users (Points)")
-                top_users = df.sort_values("Points", ascending=False).head(5)
-                for _, row in top_users.iterrows():
-                    st.write(f"**{row['User']}** - {row['Points']} points ({row['Tier']})")
-                
-                st.markdown("---")
-                
-                st.markdown("##### User Activity")
-                st.dataframe(df, use_container_width=True)
+        admin_ui()
+    elif st.session_state.current_tab == "Settings":
+        settings_ui()
+    else:
+        st.info("Ciri ini sedang dibangunkan")
 
 if __name__ == "__main__":
     main()
