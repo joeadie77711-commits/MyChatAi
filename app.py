@@ -53,7 +53,7 @@ def get_user_role(email, username=None):
     return "admin" if is_admin_user(email, username) else "user"
 
 # ============================================================
-# 🎨 CSS
+# 🎨 CSS WITH MOBILE OPTIMIZATION
 # ============================================================
 def apply_css():
     st.markdown("""
@@ -413,26 +413,161 @@ def apply_css():
         .login-btn-row .stButton:last-child button:hover {
             background: rgba(255,255,255,0.08);
         }
-        
-        .toggle-container {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 4px 0;
+
+        .sidebar-toggle {
+            display: none;
+            background: transparent;
+            border: none;
+            color: #e8edf5;
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 4px 8px;
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 999;
         }
-        .toggle-container label {
-            font-size: 0.8rem;
-            color: #8a8a9a;
-        }
         
+        /* ===== MOBILE RESPONSIVE (PORTRAIT) ===== */
         @media (max-width: 768px) {
-            .stSidebar { width: 280px !important; }
-            .message-row { max-width: 95%; }
-            .message-bubble { font-size: 0.85rem; padding: 8px 14px; }
-            .input-container textarea { padding-right: 120px; font-size: 0.85rem; }
-            .input-actions .send-btn { padding: 4px 10px; font-size: 0.7rem; }
-            .input-actions .icon-btn { padding: 2px 6px; font-size: 0.8rem; }
-            .login-box { padding: 24px 16px; }
+            /* Sidebar - auto collapse */
+            .stSidebar {
+                position: fixed !important;
+                left: -280px !important;
+                top: 0 !important;
+                height: 100vh !important;
+                width: 280px !important;
+                z-index: 1000 !important;
+                transition: left 0.3s ease !important;
+                box-shadow: 4px 0 30px rgba(0,0,0,0.5) !important;
+                padding: 16px !important;
+                background: #0d0d0d !important;
+            }
+            .stSidebar.open {
+                left: 0 !important;
+            }
+            
+            .sidebar-toggle {
+                display: block !important;
+            }
+            
+            .stApp {
+                padding-top: 0 !important;
+            }
+            
+            .main > div {
+                padding-top: 40px !important;
+            }
+            
+            /* Chat messages - full width */
+            .message-row {
+                max-width: 95% !important;
+            }
+            .message-bubble {
+                font-size: 0.85rem !important;
+                padding: 8px 14px !important;
+                border-radius: 12px !important;
+            }
+            
+            /* Input area */
+            .input-container textarea {
+                font-size: 0.85rem !important;
+                padding: 10px 12px !important;
+                padding-right: 120px !important;
+                min-height: 44px !important;
+                max-height: 120px !important;
+                border-radius: 10px !important;
+            }
+            .input-actions .send-btn {
+                padding: 4px 10px !important;
+                font-size: 0.7rem !important;
+                border-radius: 6px !important;
+            }
+            .input-actions .icon-btn {
+                padding: 2px 6px !important;
+                font-size: 0.8rem !important;
+            }
+            
+            /* Login page */
+            .login-box {
+                padding: 24px 16px !important;
+                margin: 10px !important;
+                border-radius: 12px !important;
+            }
+            .login-title {
+                font-size: 24px !important;
+                margin-bottom: 16px !important;
+            }
+            .login-box .stTextInput input {
+                padding: 10px 14px !important;
+                font-size: 13px !important;
+            }
+            .login-btn-row .stButton button {
+                padding: 10px !important;
+                font-size: 13px !important;
+            }
+            
+            /* Header */
+            .chat-header {
+                padding: 8px 12px !important;
+                flex-wrap: wrap !important;
+            }
+            .chat-header .header-title {
+                font-size: 0.9rem !important;
+            }
+            .chat-header .header-actions button {
+                padding: 4px 8px !important;
+                font-size: 0.6rem !important;
+            }
+            .chat-header .header-actions button span {
+                display: none !important;
+            }
+            
+            /* User card */
+            .user-card {
+                padding: 10px !important;
+            }
+            .user-card .username {
+                font-size: 0.85rem !important;
+            }
+            .badge-item {
+                font-size: 0.45rem !important;
+                padding: 1px 8px !important;
+            }
+            
+            /* New Chat button */
+            .btn-new-chat {
+                padding: 8px 12px !important;
+                font-size: 0.8rem !important;
+            }
+            
+            /* History items */
+            .history-item {
+                font-size: 0.7rem !important;
+                padding: 4px 8px !important;
+            }
+            
+            /* Toggle buttons */
+            .stCheckbox label {
+                font-size: 0.75rem !important;
+            }
+            
+            /* Metrics */
+            .metric-card .value {
+                font-size: 1.2rem !important;
+            }
+            .metric-card .label {
+                font-size: 0.55rem !important;
+            }
+            
+            /* Admin panel */
+            .stTabs [data-baseweb="tab-list"] {
+                gap: 4px !important;
+            }
+            .stTabs [data-baseweb="tab"] {
+                font-size: 0.7rem !important;
+                padding: 4px 8px !important;
+            }
         }
     </style>
     """, unsafe_allow_html=True)
@@ -971,6 +1106,13 @@ def main():
         welcome = "💕 Hi dear! I'm ready to serve you with love. 😊"
         if not any(msg.get("content") == welcome for msg in st.session_state.messages):
             st.session_state.messages.append({"role": "ai", "content": welcome})
+
+    # Sidebar toggle for mobile
+    st.markdown("""
+    <button class="sidebar-toggle" onclick="document.querySelector('.stSidebar').classList.toggle('open');">
+        ☰
+    </button>
+    """, unsafe_allow_html=True)
 
     with st.sidebar:
         st.markdown(f"""
