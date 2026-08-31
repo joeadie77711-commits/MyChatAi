@@ -4,7 +4,6 @@ import datetime
 import json
 import os
 import requests
-import hashlib
 import re
 import time
 import logging
@@ -15,8 +14,6 @@ import threading
 import tempfile
 from io import BytesIO
 from PIL import Image
-import base64
-import random
 from collections import defaultdict
 from urllib.parse import quote
 from requests.adapters import HTTPAdapter
@@ -622,19 +619,34 @@ def call_replicate(prompt):
             if not prediction_id:
                 logger.error(f"Replicate response missing id: {resp_json}")
                 return None
-            for _ in range(30):
-                status_response = requests_session.get(f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers)
-                if status_response.status_code == 200:
-                    status_data = status_response.json()
-                    if status_data.get('status') == 'succeeded':
-                        output = status_data.get('output')
-                        if isinstance(output, str):
-                            return output
-                        return str(output) if output is not None else None
-                    elif status_data.get('status') == 'failed':
-                        logger.error(f"Replicate prediction failed: {status_data}")
-                        return None
-                time.sleep(1)
+            start_time = time.time()
+            for i in range(30):
+                try:
+                    status_response = requests_session.get(
+                        f"https://api.replicate.com/v1/predictions/{prediction_id}", 
+                        headers=headers, 
+                        timeout=10
+                    )
+                    if status_response.status_code == 200:
+                        status_data = status_response.json()
+                        if status_data.get('status') == 'succeeded':
+                            output = status_data.get('output')
+                            if isinstance(output, str):
+                                return output
+                            return str(output) if output is not None else None
+                        elif status_data.get('status') == 'failed':
+                            logger.error(f"Replicate prediction failed: {status_data}")
+                            return None
+                except Exception as e:
+                    logger.error(f"Replicate status check error: {str(e)}")
+                
+                elapsed = time.time() - start_time
+                if elapsed > 60:
+                    logger.error(f"Replicate prediction timeout after 60s")
+                    break
+                # Exponential backoff with cap
+                sleep_time = min(0.5 * (2 ** i), 5)
+                time.sleep(sleep_time)
             return None
         logger.error(f"Replicate API error: {response.status_code}")
         return None
@@ -1007,6 +1019,7 @@ def login_ui():
         st.markdown("</div></div>", unsafe_allow_html=True)
         return
     
+    # Login UI menggunakan Streamlit widgets (tanpa HTML terpotong)
     st.markdown("""
     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:20px;">
         <div style="max-width:420px; width:100%; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:20px; padding:40px 32px;">
@@ -1016,22 +1029,15 @@ def login_ui():
                 <p style="color:#8a8a9a; font-size:14px;">Groq · DeepSeek-R1 · Gemini · Claude</p>
                 <p style="color:#5a5a6a; font-size:12px;">1000 Request Percuma · Premium Available</p>
             </div>
-            <div style="display:flex; flex-direction:column; gap:12px;">
-                <input type="text" placeholder="Username" id="login_user" style="width:100%; padding:14px 18px; border-radius:12px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.02); color:#e8edf5; font-size:15px; outline:none;">
-                <input type="password" placeholder="Password" id="login_pass" style="width:100%; padding:14px 18px; border-radius:12px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.02); color:#e8edf5; font-size:15px; outline:none;">
-                <input type="email" placeholder="Email (untuk daftar)" id="login_email" style="width:100%; padding:14px 18px; border-radius:12px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.02); color:#e8edf5; font-size:15px; outline:none;">
-                <button style="width:100%; padding:14px; background:linear-gradient(135deg,#4d6bfe,#7c3aed); border:none; border-radius:12px; font-weight:700; color:white; font-size:16px; cursor:pointer; margin-top:4px;" onclick="document.getElementById('login_btn').click();">🔓 Login</button>
-                <div style="text-align:center; margin-top:8px; font-size:14px; color:#5a5a6a;">Tiada akaun? <a href="#" style="color:#4d6bfe; text-decoration:none;" onclick="document.getElementById('signup_btn').click();">Daftar Sekarang</a></div>
-            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        username = st.text_input("Username", key="login_user_input", placeholder="", label_visibility="collapsed")
-        password = st.text_input("Password", type="password", key="login_pass_input", placeholder="", label_visibility="collapsed")
-        email = st.text_input("Email", key="login_email_input", placeholder="", label_visibility="collapsed")
+        username = st.text_input("Username", key="login_user_input", placeholder="Masukkan username")
+        password = st.text_input("Password", type="password", key="login_pass_input", placeholder="Masukkan password")
+        email = st.text_input("Email (untuk daftar)", key="login_email_input", placeholder="Masukkan email")
 
         col_a, col_b = st.columns(2)
         with col_a:
