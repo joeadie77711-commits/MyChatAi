@@ -1,3 +1,9 @@
+# MyChatAI runtime files (should not be committed)
+mychat_users.json
+mychat_chats.json
+mychat_usage.json
+mychat_app.log
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -110,10 +116,9 @@ ipython_config.py
 
 # pdm
 #   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
 # pdm.lock
-# pdm.toml
+#   pdm creates a virtual environment in the .pdm directory, just like venv module creates one
+#   in the .venv directory. It is recommended not to include this directory in version control.
 .pdm-python
 .pdm-build/
 
