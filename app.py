@@ -689,7 +689,20 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
         else:
             response = call_groq(prompt)
 
-        if isinstance(response, str) and (response.startswith("Ralat") or response.startswith("❌")):
+        # Type checking for response
+        if isinstance(response, str):
+            if response.startswith("Ralat") or response.startswith("❌"):
+                response = smart_ai_with_fallback(prompt)
+        elif response is not None:
+            try:
+                response_str = str(response)
+                if response_str.startswith("Ralat") or response_str.startswith("❌"):
+                    response = smart_ai_with_fallback(prompt)
+                else:
+                    response = response_str
+            except:
+                response = smart_ai_with_fallback(prompt)
+        else:
             response = smart_ai_with_fallback(prompt)
 
         increment_usage(username)
