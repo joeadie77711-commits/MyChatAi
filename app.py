@@ -19,6 +19,20 @@ import base64
 import random
 from collections import defaultdict
 from urllib.parse import quote
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import logging.handlers
+
+# === LOGGING SETUP WITH ROTATING FILE ===
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+handler = logging.handlers.RotatingFileHandler(
+    'mychat_app.log', 
+    maxBytes=5*1024*1024, 
+    backupCount=3
+)
+handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(handler)
 
 # === FCNTL FALLBACK UNTUK WINDOWS ===
 try:
@@ -28,14 +42,6 @@ except ImportError:
     fcntl = None
     HAVE_FCNTL = False
 
-# === LOGGING SETUP ===
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    filename='mychat_app.log'
-)
-logger = logging.getLogger(__name__)
-
 # === PAGE CONFIG ===
 st.set_page_config(
     page_title="MyChatAI Pro",
@@ -43,6 +49,20 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# === REQUESTS SESSION WITH RETRIES ===
+def get_requests_session():
+    session = requests.Session()
+    retries = Retry(
+        total=3, 
+        backoff_factor=0.5, 
+        status_forcelist=[429, 500, 502, 503, 504]
+    )
+    session.mount('https://', HTTPAdapter(max_retries=retries))
+    session.mount('http://', HTTPAdapter(max_retries=retries))
+    return session
+
+requests_session = get_requests_session()
 
 # === API KEYS DARI STREAMLIT SECRETS ===
 # Gunakan .get() untuk semua untuk elakkan KeyError
@@ -111,6 +131,11 @@ def atomic_write_file(filepath, data):
             if HAVE_FCNTL and fcntl:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         os.replace(temppath, filepath)
+        # Set secure permissions
+        try:
+            os.chmod(filepath, 0o600)
+        except Exception:
+            pass
         return True
     except Exception as e:
         logger.error(f"Atomic write error: {traceback.format_exc()}")
@@ -463,13 +488,13 @@ def update_user(username, data):
         return True
     return False
 
-# === AI FUNCTIONS ===
+# === AI FUNCTIONS - WITH RETRIES ===
 def call_groq(prompt):
     try:
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
         payload = {"model": "llama-3.1-70b-versatile", "messages": [{"role": "user", "content": prompt}], "temperature": 0.7, "max_tokens": 2048}
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response = requests_session.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
             data = response.json()
             try:
@@ -498,7 +523,7 @@ def call_deepseek_r1(prompt):
             "X-Title": "MyChatAI Pro"
         }
         payload = {"model": "deepseek/deepseek-r1", "messages": [{"role": "user", "content": prompt}], "temperature": 0.7, "max_tokens": 4096}
-        response = requests.post(url, json=payload, headers=headers, timeout=90)
+        response = requests_session.post(url, json=payload, headers=headers, timeout=90)
         if response.status_code == 200:
             data = response.json()
             try:
@@ -518,7 +543,7 @@ def call_gemini(prompt):
         url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
         headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response = requests_session.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
             data = response.json()
             try:
@@ -546,7 +571,7 @@ def call_claude(prompt):
             "max_tokens": 2048,
             "messages": [{"role": "user", "content": prompt}]
         }
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response = requests_session.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
             data = response.json()
             try:
@@ -566,7 +591,7 @@ def call_huggingface(prompt):
         url = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"
         headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
         payload = {"inputs": prompt}
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response = requests_session.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
             result = response.json()
             if isinstance(result, list) and len(result) > 0:
@@ -589,11 +614,11 @@ def call_replicate(prompt):
             "version": "02e509c789964a7ea8736978a43525956ef40397be9033abf9fd2badfe68c9e3",
             "input": {"prompt": prompt}
         }
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response = requests_session.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 201:
             prediction_id = response.json()['id']
             for _ in range(30):
-                status_response = requests.get(f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers)
+                status_response = requests_session.get(f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers)
                 if status_response.status_code == 200:
                     status_data = status_response.json()
                     if status_data.get('status') == 'succeeded':
@@ -1051,7 +1076,7 @@ def settings_modal():
         st.markdown("### Settings")
 
         lang = st.selectbox("🌐 Bahasa", ["Malay", "English", "Chinese"], index=0)
-        dark_mode = st.checkbox("Dark Mode", value=True)  # Ganti st.toggle dengan st.checkbox
+        dark_mode = st.checkbox("Dark Mode", value=True)
 
         st.markdown("#### Tukar Password")
         old_pass = st.text_input("Password Lama", type="password", key="old_pass")
@@ -1091,7 +1116,7 @@ def settings_modal():
             if DISCORD_WEBHOOK:
                 try:
                     data = {"content": f"Feedback dari {username}: {feedback}"}
-                    requests.post(DISCORD_WEBHOOK, json=data, timeout=10)
+                    requests_session.post(DISCORD_WEBHOOK, json=data, timeout=10)
                 except:
                     pass
             st.success("✅ Terima kasih! Feedback anda akan diproses.")
@@ -1316,7 +1341,7 @@ def feature_ui(feature):
         if st.button("Hasilkan", use_container_width=True) and prompt:
             try:
                 url = f"https://image.pollinations.ai/prompt/{prompt}?width=1024&height=1024&nologo=true"
-                response = requests.get(url, timeout=60)
+                response = requests_session.get(url, timeout=60)
                 if response.status_code == 200:
                     img = Image.open(BytesIO(response.content))
                     st.image(img, use_container_width=True)
@@ -1332,7 +1357,7 @@ def feature_ui(feature):
             with st.spinner("Menghasilkan video..."):
                 try:
                     url = f"https://image.pollinations.ai/video?prompt={prompt}&duration={duration}"
-                    response = requests.get(url, timeout=120)
+                    response = requests_session.get(url, timeout=120)
                     if response.status_code == 200:
                         st.video(response.content)
                     else:
@@ -1349,7 +1374,7 @@ def feature_ui(feature):
             if mode == "TTS (Percuma)":
                 try:
                     tts_url = f"https://api.pollinations.ai/tts?text={prompt[:500]}&voice=alloy"
-                    response = requests.get(tts_url, timeout=60)
+                    response = requests_session.get(tts_url, timeout=60)
                     if response.status_code == 200:
                         st.audio(response.content, format="audio/mp3")
                     else:
