@@ -431,7 +431,7 @@ def register_user(username, password, email, name=""):
             "premium_until": None,
             "total_requests": 0,
             "email_verified": False,
-            "password_changed": False  # Baru: False supaya galak tukar password
+            "password_changed": False
         }
         save_users(users)
         logger.info(f"New user registered: '{username}' ({email})")
