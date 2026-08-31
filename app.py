@@ -1,4 +1,4 @@
-# mychat_ultimate_pro_v44.0.py
+# app.py - MyChatAI Pro v44.0
 import streamlit as st
 import datetime
 import json
@@ -20,24 +20,24 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import logging.handlers
 
-# === LOGGING SETUP WITH ROTATING FILE ===
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-handler = logging.handlers.RotatingFileHandler(
-    'mychat_app.log', 
-    maxBytes=5*1024*1024, 
-    backupCount=3
-)
-handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-logger.addHandler(handler)
-
-# === FCNTL FALLBACK UNTUK WINDOWS ===
+# Windows fallback for fcntl
 try:
     import fcntl
     HAVE_FCNTL = True
 except ImportError:
     fcntl = None
     HAVE_FCNTL = False
+
+# === LOGGING SETUP ===
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+handler = logging.handlers.RotatingFileHandler(
+    'mychat_app.log',
+    maxBytes=5*1024*1024,
+    backupCount=3
+)
+handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(handler)
 
 # === PAGE CONFIG ===
 st.set_page_config(
@@ -47,12 +47,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# === REQUESTS SESSION WITH RETRIES ===
+# === REQUESTS SESSION ===
 def get_requests_session():
     session = requests.Session()
     retries = Retry(
-        total=3, 
-        backoff_factor=0.5, 
+        total=3,
+        backoff_factor=0.5,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["GET", "POST"]
     )
@@ -63,9 +63,8 @@ def get_requests_session():
 
 requests_session = get_requests_session()
 
-# === SAFE JSON ACCESS HELPER ===
+# === SAFE JSON ACCESS ===
 def safe_get(obj, path, default=None):
-    """Safely access nested dict/list structure"""
     for p in path:
         if isinstance(p, int):
             if isinstance(obj, list) and len(obj) > p:
@@ -79,7 +78,7 @@ def safe_get(obj, path, default=None):
                 return default
     return obj
 
-# === API KEYS DARI STREAMLIT SECRETS ===
+# === API KEYS ===
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY", "")
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
@@ -95,21 +94,15 @@ NEWS_API_KEY = st.secrets.get("NEWS_API_KEY", "")
 SEARCH_API_KEY = st.secrets.get("SEARCH_API_KEY", "")
 CRAZYROUTER_API_KEY = st.secrets.get("CRAZYROUTER_API_KEY", "")
 
-# === VALIDATE OPTIONAL API KEYS ===
+# === VALIDATE API KEYS ===
 if not GROQ_API_KEY:
-    logger.warning("GROQ_API_KEY not configured - Groq service will be unavailable")
+    logger.warning("GROQ_API_KEY not configured")
 if not OPENROUTER_API_KEY:
-    logger.warning("OPENROUTER_API_KEY not configured - DeepSeek service will be unavailable")
+    logger.warning("OPENROUTER_API_KEY not configured")
 if not GEMINI_API_KEY:
-    logger.warning("GEMINI_API_KEY not configured - Gemini service will be unavailable")
-if not CLAUDE_API_KEY:
-    logger.warning("CLAUDE_API_KEY not configured - Claude service will be unavailable")
-if not HUGGINGFACE_API_KEY:
-    logger.warning("HUGGINGFACE_API_KEY not configured - HuggingFace service will be unavailable")
-if not REPLICATE_API_KEY:
-    logger.warning("REPLICATE_API_KEY not configured - Replicate service will be unavailable")
+    logger.warning("GEMINI_API_KEY not configured")
 
-# === SEMAK KUNCI WAJIB ===
+# === REQUIRED KEYS ===
 required_keys = ["GROQ_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY"]
 missing_keys = [key for key in required_keys if not st.secrets.get(key)]
 if missing_keys:
@@ -118,12 +111,12 @@ if missing_keys:
     logger.error(error_msg)
     st.stop()
 
-# === WAJIB - TIADA DEFAULT ===
+# === ADMIN CREDENTIALS ===
 ADMIN_EMAIL = st.secrets.get("ADMIN_EMAIL")
 ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD")
 if not ADMIN_EMAIL or not ADMIN_PASSWORD:
-    logger.error("ADMIN_EMAIL or ADMIN_PASSWORD missing in st.secrets")
-    st.error("❌ Admin credentials not configured. Sila setup secrets.")
+    logger.error("ADMIN_EMAIL or ADMIN_PASSWORD missing")
+    st.error("❌ Admin credentials not configured.")
     st.stop()
 
 try:
@@ -145,7 +138,7 @@ MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 MAX_INPUT_LENGTH = 4000
 
-# === HASH - GUNA BCRYPT ===
+# === HASH FUNCTIONS ===
 def hash_password(password):
     salt = bcrypt.gensalt(rounds=12)
     return bcrypt.hashpw(password.encode(), salt).decode()
@@ -156,9 +149,8 @@ def verify_password(password, hashed):
     except:
         return False
 
-# === ATOMIC WRITE - CROSS PLATFORM ===
+# === ATOMIC WRITE ===
 def atomic_write_file(filepath, data):
-    """Atomic write using temp file and rename (utf-8, safe, set permissions)"""
     dirname = os.path.dirname(filepath) or "."
     try:
         fd, temppath = tempfile.mkstemp(dir=dirname, suffix='.tmp')
@@ -175,10 +167,10 @@ def atomic_write_file(filepath, data):
             pass
         return True
     except Exception as e:
-        logger.error(f"Atomic write error: {traceback.format_exc()}")
+        logger.error(f"Atomic write error: {str(e)}")
         return False
 
-# === FILE LOCKING - THREAD SAFE DENGAN ATOMIC WRITE ===
+# === DATA MANAGER ===
 class DataManager:
     def __init__(self):
         self.lock = threading.RLock()
@@ -204,10 +196,10 @@ class DataManager:
                         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                     return data
             except Exception as e:
-                logger.error(f"Error loading users: {traceback.format_exc()}")
+                logger.error(f"Error loading users: {str(e)}")
                 return {}
         if not ADMIN_EMAIL or not ADMIN_PASSWORD:
-            logger.error("Cannot create default admin: ADMIN_EMAIL or ADMIN_PASSWORD missing")
+            logger.error("Cannot create default admin")
             return {}
         default = {
             "admin": {
@@ -251,7 +243,7 @@ class DataManager:
                 all_data[username] = data
                 atomic_write_file(USAGE_FILE, all_data)
             except Exception as e:
-                logger.error(f"Error saving usage: {traceback.format_exc()}")
+                logger.error(f"Error saving usage: {str(e)}")
 
     def get_users(self):
         return self._get_cached_users()
@@ -262,7 +254,7 @@ class DataManager:
 
 data_manager = DataManager()
 
-# === LOGIN ATTEMPT TRACKING ===
+# === LOGIN ATTEMPT TRACKER ===
 class LoginAttemptTracker:
     def __init__(self):
         self.attempts = {}
@@ -272,14 +264,14 @@ class LoginAttemptTracker:
         if username not in self.attempts:
             self.attempts[username] = []
         self.attempts[username].append((now, success))
-        self.attempts[username] = [(ts, s) for ts, s in self.attempts[username] 
+        self.attempts[username] = [(ts, s) for ts, s in self.attempts[username]
                                    if (now - ts).total_seconds() < 3600]
 
     def is_locked(self, username):
         now = datetime.datetime.now()
         if username not in self.attempts:
             return False
-        failed = sum(1 for ts, success in self.attempts[username] 
+        failed = sum(1 for ts, success in self.attempts[username]
                      if not success and (now - ts).total_seconds() < (LOCKOUT_MINUTES * 60))
         return failed >= MAX_LOGIN_ATTEMPTS
 
@@ -287,21 +279,21 @@ class LoginAttemptTracker:
         if username not in self.attempts:
             return MAX_LOGIN_ATTEMPTS
         now = datetime.datetime.now()
-        failed = sum(1 for ts, success in self.attempts[username] 
+        failed = sum(1 for ts, success in self.attempts[username]
                      if not success and (now - ts).total_seconds() < (LOCKOUT_MINUTES * 60))
         return max(0, MAX_LOGIN_ATTEMPTS - failed)
 
     def cleanup(self):
         now = datetime.datetime.now()
         for username in list(self.attempts.keys()):
-            self.attempts[username] = [(ts, s) for ts, s in self.attempts[username] 
+            self.attempts[username] = [(ts, s) for ts, s in self.attempts[username]
                                        if (now - ts).total_seconds() < 3600]
             if not self.attempts[username]:
                 del self.attempts[username]
 
 login_tracker = LoginAttemptTracker()
 
-# === RATE LIMITING WITH CLEANUP ===
+# === RATE LIMITER ===
 class RateLimiter:
     def __init__(self):
         self.limits = defaultdict(list)
@@ -335,9 +327,8 @@ class RateLimiter:
 
 rate_limiter = RateLimiter()
 
-# === INPUT SANITIZATION ===
+# === SANITIZATION ===
 def sanitize_input(text, max_length=1000, allow_newlines=True):
-    """Sanitize user input - remove HTML tags, redact sensitive phrases, limit length"""
     if text is None:
         return ""
     text = str(text)
@@ -390,7 +381,7 @@ def load_chats():
                     fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 return data
         except Exception as e:
-            logger.error(f"Error loading chats: {traceback.format_exc()}")
+            logger.error(f"Error loading chats: {str(e)}")
             return {}
     return {}
 
@@ -408,7 +399,7 @@ def load_usage(username):
                     fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             return data.get(username, {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year})
         except Exception as e:
-            logger.error(f"Error loading usage: {traceback.format_exc()}")
+            logger.error(f"Error loading usage: {str(e)}")
     return {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year}
 
 def save_usage(username, data):
@@ -465,7 +456,6 @@ def is_premium(username):
             return False
     return False
 
-# === RATE LIMITING WRAPPER ===
 def check_rate_limit(username, limit=30, window=60):
     return rate_limiter.check(username, limit, window)
 
@@ -473,31 +463,25 @@ def check_rate_limit(username, limit=30, window=60):
 def login_user(username, password):
     try:
         username = sanitize_input(username, 50)
-
         if login_tracker.is_locked(username):
-            logger.warning(f"Login locked for {username}")
+            logger.warning(f"Login locked for user")
             return {"success": False, "error": f"Akaun dikunci. Cuba lagi dalam {LOCKOUT_MINUTES} minit"}
-
         users = load_users()
         if username not in users:
             login_tracker.add_attempt(username, False)
-            logger.warning(f"Login attempt failed: user '{username}' not found")
+            logger.warning(f"Login attempt failed: user not found")
             return {"success": False, "error": "Username atau Password salah"}
-
         if not verify_password(password, users[username]["password"]):
             login_tracker.add_attempt(username, False)
-            logger.warning(f"Login attempt failed: wrong password for '{username}'")
+            logger.warning(f"Login attempt failed: wrong password")
             return {"success": False, "error": "Username atau Password salah"}
-
         login_tracker.add_attempt(username, True)
-        logger.info(f"User '{username}' logged in successfully")
-
+        logger.info(f"User logged in successfully")
         if username == "admin" and not users[username].get("password_changed", False):
             return {"success": True, "username": username, "role": users[username].get("role", "admin"), "force_change": True}
-
         return {"success": True, "username": username, "role": users[username].get("role", "user")}
     except Exception as e:
-        logger.error(f"Login error: {traceback.format_exc()}")
+        logger.error(f"Login error: {str(e)}")
         return {"success": False, "error": "Ralat sistem. Sila cuba lagi."}
 
 def register_user(username, password, email, name=""):
@@ -505,24 +489,18 @@ def register_user(username, password, email, name=""):
         username = sanitize_input(username, 30)
         email = sanitize_input(email, 100)
         name = sanitize_input(name, 50)
-
         if not validate_username(username):
             return {"success": False, "error": "Username 3-30 aksara (huruf, nombor, underscore)"}
-
         if not validate_email(email):
             return {"success": False, "error": "Email tidak sah"}
-
         is_strong, msg = validate_password_strength(password)
         if not is_strong:
             return {"success": False, "error": msg}
-
         users = load_users()
         if username in users:
             return {"success": False, "error": "Username sudah wujud"}
-
         if any(u.get("email", "").lower() == email.lower() for u in users.values()):
             return {"success": False, "error": "Email sudah didaftarkan"}
-
         users[username] = {
             "password": hash_password(password),
             "role": "user",
@@ -537,10 +515,10 @@ def register_user(username, password, email, name=""):
             "password_changed": False
         }
         save_users(users)
-        logger.info(f"New user registered: '{username}' ({email})")
+        logger.info(f"New user registered: '{username}'")
         return {"success": True, "username": username, "email_verification_required": True}
     except Exception as e:
-        logger.error(f"Registration error: {traceback.format_exc()}")
+        logger.error(f"Registration error: {str(e)}")
         return {"success": False, "error": "Ralat sistem. Sila cuba lagi."}
 
 def get_user_data(username):
@@ -555,7 +533,7 @@ def update_user(username, data):
         return True
     return False
 
-# === AI FUNCTIONS - WITH SESSION AND SAFE_GET ===
+# === AI FUNCTIONS ===
 def call_groq(prompt):
     if not GROQ_API_KEY:
         return {"ok": False, "error": "Groq API key not configured"}
@@ -579,7 +557,7 @@ def call_groq(prompt):
         logger.error(f"Groq request error: {str(e)}")
         return {"ok": False, "error": str(e)}
     except Exception as e:
-        logger.error(f"Groq error: {traceback.format_exc()}")
+        logger.error(f"Groq error: {str(e)}")
         return {"ok": False, "error": str(e)}
 
 def call_deepseek_r1(prompt):
@@ -604,7 +582,7 @@ def call_deepseek_r1(prompt):
         logger.error(f"DeepSeek API error: {response.status_code}")
         return {"ok": False, "error": f"DeepSeek API error: {response.status_code}"}
     except Exception as e:
-        logger.error(f"DeepSeek error: {traceback.format_exc()}")
+        logger.error(f"DeepSeek error: {str(e)}")
         return {"ok": False, "error": str(e)}
 
 def call_gemini(prompt):
@@ -624,7 +602,7 @@ def call_gemini(prompt):
         logger.error(f"Gemini API error: {response.status_code}")
         return {"ok": False, "error": f"Gemini API error: {response.status_code}"}
     except Exception as e:
-        logger.error(f"Gemini error: {traceback.format_exc()}")
+        logger.error(f"Gemini error: {str(e)}")
         return {"ok": False, "error": str(e)}
 
 def call_claude(prompt):
@@ -652,7 +630,7 @@ def call_claude(prompt):
         logger.error(f"Claude API error: {response.status_code}")
         return {"ok": False, "error": f"Claude API error: {response.status_code}"}
     except Exception as e:
-        logger.error(f"Claude error: {traceback.format_exc()}")
+        logger.error(f"Claude error: {str(e)}")
         return {"ok": False, "error": str(e)}
 
 def call_huggingface(prompt):
@@ -674,7 +652,7 @@ def call_huggingface(prompt):
         logger.error(f"HuggingFace API error: {response.status_code}")
         return {"ok": False, "error": f"HuggingFace API error: {response.status_code}"}
     except Exception as e:
-        logger.error(f"HuggingFace error: {traceback.format_exc()}")
+        logger.error(f"HuggingFace error: {str(e)}")
         return {"ok": False, "error": str(e)}
 
 def call_replicate(prompt):
@@ -729,7 +707,6 @@ def call_replicate(prompt):
                     logger.warning("Replicate status check timeout, retrying...")
                 except Exception as e:
                     logger.error(f"Replicate status check error: {str(e)}")
-
                 elapsed = time.time() - start_time
                 if elapsed > 60:
                     logger.error(f"Replicate prediction timeout after {elapsed:.1f}s")
@@ -750,10 +727,10 @@ def call_replicate(prompt):
         logger.error("Replicate timeout")
         return {"ok": False, "error": "Timeout - Sila cuba lagi"}
     except Exception as e:
-        logger.error(f"Replicate error: {traceback.format_exc()}")
+        logger.error(f"Replicate error: {str(e)}")
         return {"ok": False, "error": str(e)}
 
-# === SMART AI DENGAN AUTO-FALLBACK ===
+# === SMART AI ===
 def smart_ai_with_fallback(prompt):
     models = [
         ("Groq", call_groq),
@@ -778,7 +755,7 @@ def smart_ai_with_fallback(prompt):
             continue
     return "Maaf, semua model AI tidak dapat diakses. Sila cuba lagi nanti."
 
-# === DETECT SOALAN "SIAPA ANDA" ===
+# === IDENTITY DETECTION ===
 def is_identity_question(prompt):
     identity_keywords = [
         "siapa anda", "siapa kamu", "siapa awak", "awak siapa", "anda siapa",
@@ -797,51 +774,40 @@ def is_identity_question(prompt):
 
 def get_identity_response():
     return """Helo! Nama saya Joe, dan saya adalah AI assistant peribadi anda dari MyChatAI Pro.
-
 Saya direka khas untuk membantu anda dengan pelbagai tugasan harian secara pantas dan efektif. Saya menggunakan gabungan model AI terbaik seperti Groq, DeepSeek-R1, Gemini, Claude, HuggingFace dan Replicate untuk memberikan jawapan yang tepat dan berkualiti.
-
 Antara kelebihan saya:
 - 1000 soalan percuma setiap bulan
 - Boleh menjana gambar, video, muzik, RPH, invois, business plan dan banyak lagi
 - Sokongan multi-bahasa (Melayu, Inggeris, Cina)
-
 Ciri-ciri utama saya termasuklah chat pintar, generator RPH, art dan video, music generator (TTS dan Suno), invois dan quotation, integrasi WhatsApp, business tools, fitness tracker, meditation guide, research assistant, game master dan banyak lagi.
-
 Ada apa-apa yang boleh saya bantu? Saya sedia membantu anda pada bila-bila masa."""
 
-# === SMART AI - UTAMA ===
+# === SMART AI MAIN ===
 def smart_ai(username, prompt, think_mode=False, search_mode=False):
     if not check_rate_limit(username):
-        logger.warning(f"Rate limit exceeded for {username}")
+        logger.warning(f"Rate limit exceeded for user")
         return "Maaf, terlalu banyak permintaan. Sila tunggu sebentar."
-
     limit_check = check_usage_limit(username)
     if not limit_check["allowed"]:
         return f"Had Penggunaan Bulanan Telah Dicapai\nPenggunaan: {limit_check['used']}/{limit_check['limit']}"
-
     prompt = sanitize_prompt(prompt)
-
     if is_identity_question(prompt):
         return get_identity_response()
-
     if search_mode:
         prompt = f"Please search and provide comprehensive information about: {prompt}"
-
     try:
         if think_mode:
             result = call_deepseek_r1(prompt)
         else:
             result = call_groq(prompt)
-
         if isinstance(result, dict) and result.get("ok"):
             response = result["text"]
         else:
             response = smart_ai_with_fallback(prompt)
-
         increment_usage(username)
         return response
     except Exception as e:
-        logger.error(f"Smart AI error: {traceback.format_exc()}")
+        logger.error(f"Smart AI error: {str(e)}")
         return "Maaf, berlaku ralat. Sila cuba lagi."
 
 # === CSS ===
@@ -852,7 +818,6 @@ def apply_css():
     * { font-family: 'Inter', sans-serif; }
     .stApp { background: #0d0d0d; }
     .stSidebar { background: rgba(255,255,255,0.02) !important; border-right: 1px solid rgba(255,255,255,0.04) !important; }
-
     .chat-bubble-user {
         background: linear-gradient(135deg, #4d6bfe, #7c3aed);
         color: white;
@@ -872,7 +837,6 @@ def apply_css():
         margin-bottom: 12px;
         border: 1px solid rgba(255,255,255,0.06);
     }
-
     .input-container {
         position: fixed;
         bottom: 0;
@@ -912,8 +876,7 @@ def apply_css():
         color: #5a5a6a;
         font-size: 15px;
     }
-
-    .input-btn {
+    .toggle-btn {
         background: transparent;
         border: none;
         color: #8a8a9a;
@@ -926,28 +889,31 @@ def apply_css():
         white-space: nowrap;
         height: 40px;
     }
-    .input-btn:hover {
+    .toggle-btn:hover {
         background: rgba(255,255,255,0.06);
         color: #e8edf5;
     }
-    .input-btn.active {
+    .toggle-btn.active {
         color: #4d6bfe;
         background: rgba(77,107,254,0.15);
     }
-    .input-btn.send-btn {
+    .send-btn {
         background: linear-gradient(135deg, #4d6bfe, #7c3aed);
         color: white;
+        border: none;
         padding: 8px 20px;
         border-radius: 10px;
         font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.2s;
         height: 40px;
         min-width: 80px;
     }
-    .input-btn.send-btn:hover {
+    .send-btn:hover {
         transform: scale(1.02);
         box-shadow: 0 4px 20px rgba(77,107,254,0.3);
     }
-
     .profile-section {
         display: flex;
         align-items: center;
@@ -972,7 +938,6 @@ def apply_css():
         font-size: 11px;
         color: #5a5a6a;
     }
-
     .settings-btn {
         background: transparent;
         border: none;
@@ -986,33 +951,6 @@ def apply_css():
         background: rgba(255,255,255,0.05);
         color: #e8edf5;
     }
-
-    .new-chat-btn {
-        background: linear-gradient(135deg, #4d6bfe, #7c3aed);
-        color: white;
-        border: none;
-        border-radius: 10px;
-        padding: 10px 16px;
-        font-weight: 600;
-        width: 100%;
-        cursor: pointer;
-        margin-bottom: 12px;
-    }
-
-    .history-item {
-        padding: 8px 12px;
-        border-radius: 8px;
-        margin-bottom: 4px;
-        cursor: pointer;
-        font-size: 13px;
-        color: #8a8a9a;
-        transition: all 0.2s;
-    }
-    .history-item:hover {
-        background: rgba(255,255,255,0.04);
-        color: #e8edf5;
-    }
-
     .brand-title {
         text-align: center;
         padding: 16px 0 10px 0;
@@ -1039,7 +977,6 @@ def apply_css():
         margin-top: 2px;
         letter-spacing: 0.5px;
     }
-
     .premium-badge {
         background: linear-gradient(135deg, #f59e0b, #d97706);
         padding: 2px 12px;
@@ -1053,7 +990,6 @@ def apply_css():
         color: #10b981;
         font-size: 10px;
     }
-
     .footer-credit {
         text-align: center;
         padding: 12px 0 8px 0;
@@ -1062,12 +998,11 @@ def apply_css():
         border-top: 1px solid rgba(255,255,255,0.03);
         margin-top: 10px;
     }
-
     @media (max-width: 768px) {
         .stSidebar { width: 280px !important; }
         .input-wrapper { padding: 4px 4px 4px 12px; }
-        .input-btn { padding: 6px 10px; font-size: 12px; }
-        .input-btn.send-btn { min-width: 60px; padding: 6px 14px; }
+        .toggle-btn { padding: 6px 10px; font-size: 12px; }
+        .send-btn { min-width: 60px; padding: 6px 14px; font-size: 12px; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -1075,7 +1010,6 @@ def apply_css():
 # === LOGIN UI ===
 def login_ui():
     apply_css()
-
     if st.session_state.get("force_password_change", False):
         st.markdown("""
         <div style="max-width:420px; margin:0 auto; padding:40px 20px;">
@@ -1083,10 +1017,8 @@ def login_ui():
                 <h2 style="color:#e8edf5; text-align:center;">🔐 Tukar Password</h2>
                 <p style="color:#f59e0b; text-align:center; font-size:14px;">Sila tukar password default anda untuk keselamatan.</p>
         """, unsafe_allow_html=True)
-
         new_pass = st.text_input("Password Baru", type="password", key="force_new_pass")
         confirm_pass = st.text_input("Confirm Password", type="password", key="force_confirm_pass")
-
         if st.button("💾 Tukar Password", use_container_width=True):
             is_strong, msg = validate_password_strength(new_pass)
             if not is_strong:
@@ -1102,10 +1034,8 @@ def login_ui():
                     st.session_state.force_password_change = False
                     st.success("✅ Password berjaya ditukar! Sila login semula.")
                     st.rerun()
-
         st.markdown("</div></div>", unsafe_allow_html=True)
         return
-
     st.markdown("""
     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:20px;">
         <div style="max-width:420px; width:100%; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:20px; padding:40px 32px;">
@@ -1118,14 +1048,12 @@ def login_ui():
         </div>
     </div>
     """, unsafe_allow_html=True)
-
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         username = st.text_input("Username", key="login_user_input", placeholder="Masukkan username")
         password = st.text_input("Password", type="password", key="login_pass_input", placeholder="Masukkan password")
         with st.expander("📝 Daftar Akaun Baru", expanded=False):
             email = st.text_input("Email", key="login_email_input", placeholder="Masukkan email untuk daftar")
-
         col_a, col_b = st.columns(2)
         with col_a:
             if st.button("🔓 Login", key="login_btn", use_container_width=True):
@@ -1161,20 +1089,17 @@ def login_ui():
 def settings_modal():
     username = st.session_state.username
     user_data = get_user_data(username)
-
     with st.sidebar:
         st.markdown("---")
         st.markdown("### Settings")
-
         current_lang = user_data.get("settings", {}).get("language", "Malay")
         lang_index = 0 if current_lang == "Malay" else 1 if current_lang == "English" else 2
-        lang = st.selectbox("🌐 Bahasa", ["Malay", "English", "Chinese"], index=lang_index)
+        lang = st.selectbox("Bahasa", ["Malay", "English", "Chinese"], index=lang_index)
         if lang != current_lang:
             user_data["settings"]["language"] = lang
             update_user(username, {"settings": user_data["settings"]})
             st.success("✅ Language updated!")
             st.rerun()
-
         current_dark_mode = user_data.get("settings", {}).get("dark_mode", True)
         dark_mode = st.checkbox("Dark Mode", value=current_dark_mode)
         if dark_mode != current_dark_mode:
@@ -1182,12 +1107,10 @@ def settings_modal():
             update_user(username, {"settings": user_data["settings"]})
             st.success("✅ Settings updated!")
             st.rerun()
-
         st.markdown("#### Tukar Password")
         old_pass = st.text_input("Password Lama", type="password", key="old_pass")
         new_pass = st.text_input("Password Baru", type="password", key="new_pass")
         confirm_pass = st.text_input("Confirm Password", type="password", key="confirm_pass")
-
         if st.button("Tukar Password", use_container_width=True):
             users = load_users()
             if username in users:
@@ -1202,10 +1125,9 @@ def settings_modal():
                         users[username]["password_changed"] = True
                         save_users(users)
                         st.success("✅ Password berjaya ditukar!")
-                        logger.info(f"Password changed for {username}")
+                        logger.info(f"Password changed")
                 else:
                     st.error("Password lama salah")
-
         st.markdown("---")
         st.markdown("### Usage Status")
         usage = get_usage_status(username)
@@ -1213,7 +1135,6 @@ def settings_modal():
             st.progress(usage["percentage"] / 100)
         st.caption(f"Digunakan: {usage['used']} / {usage['limit']} (Bulanan)")
         st.caption(f"Baki: {usage['remaining']} request")
-
         st.markdown("---")
         st.markdown("### Help & Feedback")
         feedback = st.text_area("Hantar feedback atau laporkan isu:", height=80)
@@ -1221,23 +1142,21 @@ def settings_modal():
             if feedback and feedback.strip():
                 if DISCORD_WEBHOOK:
                     try:
-                        data = {"content": f"Feedback dari {username}: {feedback[:500]}"}
+                        data = {"content": f"Feedback: {feedback[:500]}"}
                         requests_session.post(DISCORD_WEBHOOK, json=data, timeout=10)
                     except Exception as e:
                         logger.error(f"Discord webhook error: {str(e)}")
                 st.success("✅ Terima kasih! Feedback anda akan diproses.")
             else:
                 st.warning("⚠️ Sila masukkan feedback")
-
         st.markdown("---")
         st.caption("MyChatAI Pro v44.0")
-        st.caption(f"{username} | {st.session_state.role}")
+        st.caption(f"User | {st.session_state.role}")
 
 # === CHAT UI ===
 def chat_ui():
     username = st.session_state.username
     user_data = get_user_data(username)
-
     if "session_start" in st.session_state:
         elapsed = time.time() - st.session_state.session_start
         if elapsed > SESSION_TIMEOUT:
@@ -1249,7 +1168,6 @@ def chat_ui():
             remaining = int((SESSION_TIMEOUT - elapsed) / 60)
             if remaining > 0:
                 st.sidebar.warning(f"⏰ Session akan tamat dalam {remaining} minit")
-
     if "messages" not in st.session_state:
         st.session_state.messages = []
     if "think_mode" not in st.session_state:
@@ -1260,9 +1178,7 @@ def chat_ui():
         st.session_state.chat_history = load_chats().get(username, [])
     if "show_settings" not in st.session_state:
         st.session_state.show_settings = False
-
     apply_css()
-
     with st.sidebar:
         st.markdown("""
         <div class="brand-title">
@@ -1271,7 +1187,6 @@ def chat_ui():
             <div class="tagline">✨ Smart AI Assistant</div>
         </div>
         """, unsafe_allow_html=True)
-
         if st.button("➕ New Chat", key="new_chat_btn", use_container_width=True):
             if st.session_state.messages:
                 history = load_chats()
@@ -1288,9 +1203,7 @@ def chat_ui():
                 st.session_state.chat_history = history.get(username, [])
             st.session_state.messages = []
             st.rerun()
-
         search_query = st.text_input("🔍 Cari sejarah...", key="search_history", placeholder="Taip untuk cari...", label_visibility="collapsed")
-
         features = [
             "RPH", "Art", "Video", "Music",
             "Invois", "WhatsApp", "Neural", "Roadtax",
@@ -1302,31 +1215,24 @@ def chat_ui():
         if selected != "-- Pilih --" and selected != st.session_state.get("current_tab", "Chat"):
             st.session_state.current_tab = selected
             st.rerun()
-
         st.markdown("---")
         st.markdown("### history chat")
-
         history = load_chats().get(username, [])
         if search_query and search_query.strip():
             search_query_lower = search_query.lower().strip()
             history = [h for h in history if search_query_lower in h.get("title", "").lower()]
-
         for chat in reversed(history[-50:]):
             chat_time = datetime.datetime.fromisoformat(chat.get("time", datetime.datetime.now().isoformat()))
             title = chat.get("title", "Chat")[:40]
             if st.button(f"💬 {title}", key=f"hist_{chat.get('time', '')}", use_container_width=True):
                 st.session_state.messages = chat.get("messages", [])
                 st.rerun()
-
         st.markdown("---")
-
         if is_premium(username):
             st.markdown('<span class="premium-badge">PREMIUM</span>', unsafe_allow_html=True)
-
         avatar_url = user_data.get('avatar', DEFAULT_AVATAR)
         if not avatar_url or not avatar_url.strip():
             avatar_url = DEFAULT_AVATAR
-
         st.markdown(f"""
         <div class="profile-section">
             <img src="{avatar_url}" class="profile-avatar">
@@ -1337,20 +1243,16 @@ def chat_ui():
             <button class="settings-btn" onclick="document.getElementById('settings_btn').click();">⚙️</button>
         </div>
         """, unsafe_allow_html=True)
-
         if st.button("⚙️", key="settings_btn", help="Settings"):
             st.session_state.show_settings = not st.session_state.get("show_settings", False)
             st.rerun()
-
         if st.session_state.get("show_settings", False):
             settings_modal()
-
         st.markdown("""
         <div class="footer-credit">
             © 2026 <span style="color:#ec4899;">❤</span> MyChatAI Pro
         </div>
         """, unsafe_allow_html=True)
-
     if not st.session_state.messages:
         st.markdown(f"""
         <div style="text-align:center; padding:60px 20px;">
@@ -1361,56 +1263,64 @@ def chat_ui():
             <p style="color:#4a4a5a; font-size:11px; margin-top:4px;">Groq · DeepSeek · Gemini · Claude · HuggingFace · Replicate</p>
         </div>
         """, unsafe_allow_html=True)
-
     for msg in st.session_state.messages:
         safe_content = html.escape(msg["content"])
         if msg["role"] == "user":
             st.markdown(f'<div class="chat-bubble-user">{safe_content}</div>', unsafe_allow_html=True)
         else:
             st.markdown(f'<div class="chat-bubble-ai">{safe_content}</div>', unsafe_allow_html=True)
-
+    # === INPUT AREA BARU ===
     st.markdown("""
     <div class="input-container">
         <div class="input-wrapper">
-    """, unsafe_allow_html=True)
-
-    col_input, col_think, col_search, col_send = st.columns([4, 1.2, 1.2, 1.5])
-
-    with col_input:
-        user_input = st.text_input("", key="chat_input", placeholder="Taip mesej... (Enter untuk hantar)", label_visibility="collapsed")
-
-    with col_think:
-        think_label = "🧠 Think ✓" if st.session_state.think_mode else "🧠 Think"
-        if st.button(think_label, key="think_btn", use_container_width=True):
-            st.session_state.think_mode = not st.session_state.think_mode
-
-    with col_search:
-        search_label = "🔍 Search ✓" if st.session_state.search_mode else "🔍 Search"
-        if st.button(search_label, key="search_btn", use_container_width=True):
-            st.session_state.search_mode = not st.session_state.search_mode
-
-    with col_send:
-        if st.button("➤ Send", key="send_btn", use_container_width=True):
-            if user_input.strip():
-                safe_input = sanitize_input(user_input, MAX_INPUT_LENGTH)
-                st.session_state.messages.append({"role": "user", "content": safe_input})
-                with st.spinner("Menghasilkan..."):
-                    response = smart_ai(username, safe_input, st.session_state.think_mode, st.session_state.search_mode)
-                safe_resp = sanitize_input(str(response), MAX_INPUT_LENGTH)
-                st.session_state.messages.append({"role": "ai", "content": safe_resp})
-                st.rerun()
-
-    st.markdown("""
+            <input type="text" id="chat_input" placeholder="Taip mesej... (Enter untuk hantar)" autocomplete="off">
+            <button class="toggle-btn" id="think_btn">🧠 Think</button>
+            <button class="toggle-btn" id="search_btn">🔍 Search</button>
+            <button class="send-btn" id="send_btn">➤ Send</button>
         </div>
     </div>
+    <script>
+    // Think button toggle
+    document.getElementById('think_btn').onclick = function() {
+        this.classList.toggle('active');
+        var thinkValue = this.classList.contains('active');
+        // Use Streamlit's setComponentValue to update think_mode
+        parent.parent.postMessage({ type: 'streamlit:setComponentValue', value: thinkValue }, '*');
+    }
+    // Search button toggle
+    document.getElementById('search_btn').onclick = function() {
+        this.classList.toggle('active');
+        var searchValue = this.classList.contains('active');
+        parent.parent.postMessage({ type: 'streamlit:setComponentValue', value: searchValue }, '*');
+    }
+    // Send button
+    document.getElementById('send_btn').onclick = function() {
+        var input = document.getElementById('chat_input');
+        var message = input.value.trim();
+        if (message) {
+            // Send message via Streamlit
+            parent.parent.postMessage({ type: 'streamlit:setComponentValue', value: message }, '*');
+            // Clear input field
+            input.value = '';
+            input.focus();
+        }
+    }
+    // Enter key to send
+    document.getElementById('chat_input').onkeydown = function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            document.getElementById('send_btn').click();
+        }
+    }
+    // Focus input on load
+    document.getElementById('chat_input').focus();
+    </script>
     """, unsafe_allow_html=True)
 
 # === FEATURE UI ===
 def feature_ui(feature):
     username = st.session_state.username
-
     st.markdown(f"### {feature}")
-
     if feature == "RPH":
         col1, col2 = st.columns(2)
         with col1:
@@ -1428,7 +1338,6 @@ def feature_ui(feature):
                     st.markdown(result["text"])
                 else:
                     st.error(result.get("error", "Gagal menjana RPH"))
-
     elif feature == "Art":
         prompt = st.text_input("Huraikan gambar")
         if st.button("Hasilkan", use_container_width=True):
@@ -1447,7 +1356,6 @@ def feature_ui(feature):
                 except Exception as e:
                     logger.error(f"Art generation error: {str(e)}")
                     st.error("Ralat - Sila cuba lagi")
-
     elif feature == "Video":
         prompt = st.text_area("Huraikan video", height=80)
         duration = st.slider("Durasi (saat)", 3, 15, 5)
@@ -1467,7 +1375,6 @@ def feature_ui(feature):
                     except Exception as e:
                         logger.error(f"Video generation error: {str(e)}")
                         st.error("Ralat - Sila cuba lagi")
-
     elif feature == "Music":
         st.info("🎵 Music Generator - Hasilkan lagu dengan TTS atau Suno")
         mode = st.radio("Pilih Mod:", ["TTS (Percuma)", "Suno (Lagu Sebenar)"], horizontal=True)
@@ -1491,7 +1398,6 @@ def feature_ui(feature):
                     st.error("Ralat - Sila cuba lagi")
             else:
                 st.warning("Suno API memerlukan setup tambahan. Guna TTS dahulu.")
-
     elif feature == "Invois":
         company = st.text_input("Nama Syarikat")
         customer = st.text_input("Nama Pelanggan")
@@ -1511,7 +1417,6 @@ def feature_ui(feature):
                 Jumlah: RM {jumlah:,.2f}
                 Tarikh: {datetime.datetime.now().strftime('%d %B %Y')}
                 """)
-
     elif feature == "WhatsApp":
         phone = st.text_input("No Telefon", placeholder="60123456789")
         message = st.text_area("Mesej", height=100)
@@ -1530,7 +1435,6 @@ def feature_ui(feature):
                     msg_encoded = quote(message)
                     whatsapp_url = f"https://wa.me/{clean_phone}?text={msg_encoded}"
                     st.markdown(f'<a href="{whatsapp_url}" target="_blank" style="background:#25D366; color:white; padding:8px 16px; border-radius:8px; text-decoration:none; font-weight:600; display:inline-block;">Buka WhatsApp</a>', unsafe_allow_html=True)
-
     elif feature == "Neural":
         st.markdown("""
         Neural Networks adalah sistem komputasi yang terinspirasi dari otak manusia.
@@ -1546,7 +1450,6 @@ def feature_ui(feature):
         4. Transformers - Asas ChatGPT
         5. GANs - Menghasilkan data baru
         """)
-
     elif feature == "Roadtax":
         st.info("Untuk semakan sebenar, gunakan aplikasi MyJPJ")
         st.markdown("""
@@ -1555,7 +1458,6 @@ def feature_ui(feature):
         - Saman: 2 saman (RM 600)
         - Insurans: AKTIF
         """)
-
     elif feature == "IC":
         st.info("Untuk semakan sebenar, gunakan portal rasmi")
         st.markdown("""
@@ -1564,7 +1466,6 @@ def feature_ui(feature):
         - BPN: LAYAK (RM 1,200)
         - BKC: LAYAK (RM 250)
         """)
-
     elif feature == "Kontraktor":
         tender_name = st.text_input("Nama Projek")
         tender_budget = st.number_input("Bajet (RM)", min_value=0.0, value=0.0)
@@ -1575,7 +1476,6 @@ def feature_ui(feature):
                 st.error("❌ Sila masukkan bajet yang sah")
             else:
                 st.success(f"Tender '{tender_name}' berjaya dibuka")
-
     elif feature == "Business":
         st.markdown("""
         - Business Plan
@@ -1590,7 +1490,6 @@ def feature_ui(feature):
                 st.markdown(result["text"])
             else:
                 st.error(result.get("error", "Gagal menjana business plan"))
-
     elif feature == "Fitness":
         goal = st.selectbox("Matlamat", ["Turun Berat", "Bina Otot", "Kekal Sihat"])
         days = st.slider("Hari seminggu", 1, 7, 3)
@@ -1600,7 +1499,6 @@ def feature_ui(feature):
                 st.markdown(result["text"])
             else:
                 st.error(result.get("error", "Gagal menjana rancangan"))
-
     elif feature == "Meditation":
         duration = st.slider("Durasi (minit)", 1, 30, 10)
         if st.button("Mula Meditasi", use_container_width=True):
@@ -1609,7 +1507,6 @@ def feature_ui(feature):
                 st.markdown(result["text"])
             else:
                 st.error(result.get("error", "Gagal menjana panduan meditasi"))
-
     elif feature == "Research":
         topic = st.text_input("Topik Penyelidikan")
         if st.button("Mulakan Penyelidikan", use_container_width=True):
@@ -1621,7 +1518,6 @@ def feature_ui(feature):
                     st.markdown(result["text"])
                 else:
                     st.error(result.get("error", "Gagal menjana literature review"))
-
     elif feature == "Comic":
         title = st.text_input("Tajuk Komik")
         if st.button("Hasilkan Komik", use_container_width=True):
@@ -1633,7 +1529,6 @@ def feature_ui(feature):
                     st.markdown(result["text"])
                 else:
                     st.error(result.get("error", "Gagal menjana komik"))
-
     elif feature == "Game":
         game_type = st.selectbox("Jenis", ["Escape Room", "Murder Mystery", "Treasure Hunt", "Adventure"])
         if st.button("Mula Permainan", use_container_width=True):
@@ -1642,7 +1537,6 @@ def feature_ui(feature):
                 st.markdown(result["text"])
             else:
                 st.error(result.get("error", "Gagal menjana permainan"))
-
     elif feature == "Analytics":
         users = load_users()
         chats = load_chats()
@@ -1655,7 +1549,6 @@ def feature_ui(feature):
             st.metric("Request", "1000/bulan")
         with col4:
             st.metric("Status", "✅ Aktif")
-
     else:
         st.info("Ciri ini sedang dibangunkan.")
 
@@ -1677,11 +1570,9 @@ def main():
         st.session_state.search_mode = False
     if "force_password_change" not in st.session_state:
         st.session_state.force_password_change = False
-
     if not st.session_state.logged_in:
         login_ui()
         return
-
     if st.session_state.current_tab == "Chat":
         chat_ui()
     else:
