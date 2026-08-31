@@ -66,7 +66,6 @@ def get_requests_session():
 requests_session = get_requests_session()
 
 # === API KEYS DARI STREAMLIT SECRETS ===
-# Gunakan .get() untuk semua untuk elakkan KeyError
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY", "")
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
@@ -99,7 +98,6 @@ if not ADMIN_EMAIL or not ADMIN_PASSWORD:
     st.error("❌ Admin credentials not configured. Sila setup secrets.")
     st.stop()
 
-# Cast MAX_FREE_REQUESTS ke int
 try:
     MAX_FREE_REQUESTS = int(st.secrets.get("MAX_FREE_REQUESTS", 1000))
 except (TypeError, ValueError):
@@ -114,7 +112,7 @@ USER_DATA_FILE = "mychat_users.json"
 CHAT_HISTORY_FILE = "mychat_chats.json"
 USAGE_FILE = "mychat_usage.json"
 DEFAULT_AVATAR = "https://ui-avatars.com/api/?name=User&background=4d6bfe&color=fff&size=40"
-SESSION_TIMEOUT = 86400  # 24 jam
+SESSION_TIMEOUT = 86400
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 MAX_INPUT_LENGTH = 4000
@@ -148,7 +146,6 @@ def atomic_write_file(filepath, data):
             if HAVE_FCNTL and fcntl:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         os.replace(temppath, filepath)
-        # Set secure permissions
         try:
             os.chmod(filepath, 0o600)
         except Exception:
@@ -192,14 +189,13 @@ data_manager = DataManager()
 # === LOGIN ATTEMPT TRACKING ===
 class LoginAttemptTracker:
     def __init__(self):
-        self.attempts = {}  # {username: [(timestamp, success), ...]}
+        self.attempts = {}
     
     def add_attempt(self, username, success):
         now = datetime.datetime.now()
         if username not in self.attempts:
             self.attempts[username] = []
         self.attempts[username].append((now, success))
-        # Clean old entries (older than 1 hour)
         self.attempts[username] = [(ts, s) for ts, s in self.attempts[username] 
                                    if (now - ts).total_seconds() < 3600]
     
@@ -223,49 +219,41 @@ login_tracker = LoginAttemptTracker()
 
 # === HASH - GUNA BCRYPT ===
 def hash_password(password):
-    """Hash password using bcrypt with salt"""
     salt = bcrypt.gensalt(rounds=12)
     return bcrypt.hashpw(password.encode(), salt).decode()
 
 def verify_password(password, hashed):
-    """Verify password against bcrypt hash"""
     try:
         return bcrypt.checkpw(password.encode(), hashed.encode())
     except:
         return False
 
-# === INPUT SANITIZATION - TANPA html.escape (buang double-escaping) ===
+# === INPUT SANITIZATION ===
 def sanitize_input(text, max_length=1000, allow_newlines=True):
-    """Sanitize user input - remove HTML tags, redact sensitive words, limit length"""
+    """Sanitize user input - remove HTML tags, redact sensitive phrases, limit length"""
     if text is None:
         return ""
     text = str(text)
-    # Remove HTML tags
     text = re.sub(r'<[^>]+>', '', text)
-    # Remove potential injection patterns - whole word only
-    text = re.sub(r'(?i)\b(system|assistant|role|ignore|forget|previous|instruction)\b', '[REDACTED]', text)
-    # Limit length
+    # Redact only dangerous phrases, not individual words
+    text = re.sub(r'(?i)\b(ignore previous instructions|forget previous instructions|system prompt override)\b', '[REDACTED]', text)
     if len(text) > max_length:
         text = text[:max_length] + "... (truncated)"
     return text.strip()
 
 def sanitize_prompt(prompt):
-    """Sanitize prompt for AI"""
     prompt = sanitize_input(prompt, MAX_INPUT_LENGTH)
-    prompt = re.sub(r'(?i)\b(you are|you are now|system prompt|developer mode)\b', '[REDACTED]', prompt)
+    prompt = re.sub(r'(?i)\b(you are now a system|developer mode enabled|override system prompt)\b', '[REDACTED]', prompt)
     return prompt
 
 def validate_email(email):
-    """Validate email format"""
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return re.match(pattern, email) is not None
 
 def validate_username(username):
-    """Validate username format"""
     return re.match(r'^[a-zA-Z0-9_]{3,30}$', username) is not None
 
 def validate_password_strength(password):
-    """Check password strength"""
     if len(password) < 8:
         return False, "Password mesti sekurang-kurangnya 8 aksara"
     if not re.search(r'[A-Z]', password):
@@ -293,7 +281,6 @@ def load_users():
             logger.error(f"Error loading users: {traceback.format_exc()}")
             return {}
     
-    # Only create default admin if credentials exist
     if not ADMIN_EMAIL or not ADMIN_PASSWORD:
         logger.error("Cannot create default admin: ADMIN_EMAIL or ADMIN_PASSWORD missing")
         return {}
@@ -349,7 +336,6 @@ def load_usage(username):
             return data.get(username, {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year})
         except Exception as e:
             logger.error(f"Error loading usage: {traceback.format_exc()}")
-            pass
     return {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year}
 
 def save_usage(username, data):
@@ -410,7 +396,6 @@ def is_premium(username):
 rate_limits = defaultdict(list)
 
 def check_rate_limit(username, limit=30, window=60):
-    """30 requests per minute"""
     now = time.time()
     rate_limits[username] = [t for t in rate_limits[username] if t > now - window]
     if len(rate_limits[username]) >= limit:
@@ -435,7 +420,6 @@ def login_user(username, password):
         
         if not verify_password(password, users[username]["password"]):
             login_tracker.add_attempt(username, False)
-            remaining = login_tracker.get_remaining_attempts(username)
             logger.warning(f"Login attempt failed: wrong password for '{username}'")
             return {"success": False, "error": "Username atau Password salah"}
         
@@ -470,7 +454,7 @@ def register_user(username, password, email, name=""):
         if username in users:
             return {"success": False, "error": "Username sudah wujud"}
         
-        if any(u.get("email").lower() == email.lower() for u in users.values()):
+        if any(u.get("email", "").lower() == email.lower() for u in users.values()):
             return {"success": False, "error": "Email sudah didaftarkan"}
         
         users[username] = {
@@ -484,7 +468,7 @@ def register_user(username, password, email, name=""):
             "premium_until": None,
             "total_requests": 0,
             "email_verified": False,
-            "password_changed": False  # Galak tukar password pada login pertama
+            "password_changed": False
         }
         save_users(users)
         logger.info(f"New user registered: '{username}' ({email})")
@@ -505,7 +489,7 @@ def update_user(username, data):
         return True
     return False
 
-# === AI FUNCTIONS - WITH RETRIES ===
+# === AI FUNCTIONS ===
 def call_groq(prompt):
     try:
         url = "https://api.groq.com/openai/v1/chat/completions"
@@ -633,7 +617,11 @@ def call_replicate(prompt):
         }
         response = requests_session.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 201:
-            prediction_id = response.json()['id']
+            resp_json = response.json()
+            prediction_id = safe_get(resp_json, ['id'])
+            if not prediction_id:
+                logger.error(f"Replicate response missing id: {resp_json}")
+                return None
             for _ in range(30):
                 status_response = requests_session.get(f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers)
                 if status_response.status_code == 200:
@@ -644,17 +632,17 @@ def call_replicate(prompt):
                             return output
                         return str(output) if output is not None else None
                     elif status_data.get('status') == 'failed':
+                        logger.error(f"Replicate prediction failed: {status_data}")
                         return None
                 time.sleep(1)
             return None
+        logger.error(f"Replicate API error: {response.status_code}")
         return None
     except Exception as e:
         logger.error(f"Replicate error: {traceback.format_exc()}")
         return None
 
-# ============================================================
-# SMART AI DENGAN AUTO-FALLBACK
-# ============================================================
+# === SMART AI DENGAN AUTO-FALLBACK ===
 def smart_ai_with_fallback(prompt):
     models = [
         ("Groq", call_groq),
@@ -667,7 +655,6 @@ def smart_ai_with_fallback(prompt):
     for model_name, model_func in models:
         try:
             response = model_func(prompt)
-            # Handle non-string responses
             if isinstance(response, str):
                 if response and not response.startswith("Ralat") and not response.startswith("❌"):
                     logger.info(f"Success with {model_name}")
@@ -685,11 +672,8 @@ def smart_ai_with_fallback(prompt):
             continue
     return "Maaf, semua model AI tidak dapat diakses. Sila cuba lagi nanti."
 
-# ============================================================
-# DETECT SOALAN "SIAPA ANDA"
-# ============================================================
+# === DETECT SOALAN "SIAPA ANDA" ===
 def is_identity_question(prompt):
-    """Detect identity question - guna whole word matching"""
     identity_keywords = [
         "siapa anda", "siapa kamu", "siapa awak", "awak siapa", "anda siapa",
         "kamu siapa", "siapa kau", "kau siapa", "who are you", "who are u",
@@ -719,9 +703,7 @@ Ciri-ciri utama saya termasuklah chat pintar, generator RPH, art dan video, musi
 
 Ada apa-apa yang boleh saya bantu? Saya sedia membantu anda pada bila-bila masa."""
 
-# ============================================================
-# SMART AI - UTAMA
-# ============================================================
+# === SMART AI - UTAMA ===
 def smart_ai(username, prompt, think_mode=False, search_mode=False):
     if not check_rate_limit(username):
         logger.warning(f"Rate limit exceeded for {username}")
@@ -742,7 +724,6 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
         else:
             response = call_groq(prompt)
 
-        # Type checking for response
         if isinstance(response, str):
             if response.startswith("Ralat") or response.startswith("❌"):
                 response = smart_ai_with_fallback(prompt)
@@ -1181,9 +1162,7 @@ def chat_ui():
                 history = load_chats()
                 if username not in history:
                     history[username] = []
-                # Extract plain text for title (avoid HTML entities)
                 first_msg = st.session_state.messages[0]["content"]
-                # Remove HTML tags for title
                 chat_title = re.sub(r'<[^>]+>', '', first_msg)[:50] if first_msg else "New Chat"
                 history[username].append({
                     "title": chat_title,
@@ -1264,7 +1243,6 @@ def chat_ui():
         """, unsafe_allow_html=True)
 
     for msg in st.session_state.messages:
-        # Escape content before displaying (XSS protection) - ONLY ONCE
         safe_content = html.escape(msg["content"])
         if msg["role"] == "user":
             st.markdown(f'<div class="chat-bubble-user">{safe_content}</div>', unsafe_allow_html=True)
@@ -1296,12 +1274,10 @@ def chat_ui():
     with col_send:
         if st.button("➤ Send", key="send_btn", use_container_width=True):
             if user_input.strip():
-                # Sanitize input before saving (XSS protection)
                 safe_input = sanitize_input(user_input, MAX_INPUT_LENGTH)
                 st.session_state.messages.append({"role": "user", "content": safe_input})
                 with st.spinner("Menghasilkan..."):
                     response = smart_ai(username, safe_input, st.session_state.think_mode, st.session_state.search_mode)
-                # Sanitize and truncate AI response before saving
                 safe_resp = sanitize_input(str(response), MAX_INPUT_LENGTH)
                 st.session_state.messages.append({"role": "ai", "content": safe_resp})
                 st.rerun()
