@@ -52,26 +52,22 @@ try:
     NEWS_API_KEY = st.secrets.get("NEWS_API_KEY", "")
     SEARCH_API_KEY = st.secrets.get("SEARCH_API_KEY", "")
     CRAZYROUTER_API_KEY = st.secrets.get("CRAZYROUTER_API_KEY", "")
-    ADMIN_EMAIL = st.secrets.get("ADMIN_EMAIL")
-    ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD")
+    ADMIN_EMAIL = st.secrets.get("ADMIN_EMAIL", "joe.adie77711@gmail.com")
+    ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "Joe@220481")  # Default jika tiada
     MAX_FREE_REQUESTS = st.secrets.get("MAX_FREE_REQUESTS", 1000)
     DISCORD_WEBHOOK = st.secrets.get("DISCORD_WEBHOOK", "")
     TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
     
-    # Validation
+    # Validation - hanya warning, bukan error
     if not ADMIN_EMAIL:
-        raise ValueError("ADMIN_EMAIL not set in secrets!")
+        st.warning("ADMIN_EMAIL not set in secrets! Using default.")
     if not ADMIN_PASSWORD:
-        raise ValueError("ADMIN_PASSWORD not set in secrets!")
+        st.warning("ADMIN_PASSWORD not set in secrets! Using default.")
         
 except KeyError as e:
     st.error(f"Missing required secret: {e}")
     logger.error(f"Missing secret: {e}")
-    st.stop()
-except ValueError as e:
-    st.error(f"Configuration error: {e}")
-    logger.error(f"Config error: {e}")
     st.stop()
 
 # === CONSTANTS ===
@@ -93,9 +89,9 @@ class DataManager:
         with self.lock:
             try:
                 with open(USER_DATA_FILE, "w") as f:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # Lock file
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                     json.dump(data, f, indent=2)
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # Unlock
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             except Exception as e:
                 logger.error(f"Error saving users: {traceback.format_exc()}")
                 st.error("Gagal menyimpan data pengguna")
@@ -180,13 +176,9 @@ def sanitize_input(text, max_length=1000, allow_newlines=True):
     if text is None:
         return ""
     text = str(text)
-    # Remove HTML tags
     text = re.sub(r'<[^>]+>', '', text)
-    # Escape special characters
     text = html.escape(text)
-    # Remove potential injection patterns
     text = re.sub(r'(?i)(system|assistant|role|ignore|forget|previous|instruction)', '[REDACTED]', text)
-    # Limit length
     if len(text) > max_length:
         text = text[:max_length] + "... (truncated)"
     return text.strip()
@@ -194,7 +186,6 @@ def sanitize_input(text, max_length=1000, allow_newlines=True):
 def sanitize_prompt(prompt):
     """Sanitize prompt for AI"""
     prompt = sanitize_input(prompt, MAX_INPUT_LENGTH)
-    # Additional prompt injection protection
     prompt = re.sub(r'(?i)(you are|you are now|system prompt|developer mode)', '[REDACTED]', prompt)
     return prompt
 
@@ -234,7 +225,6 @@ def load_users():
             logger.error(f"Error loading users: {traceback.format_exc()}")
             return {}
     
-    # Create default admin with bcrypt password
     default = {
         "admin": {
             "password": hash_password(ADMIN_PASSWORD),
@@ -352,10 +342,8 @@ def check_rate_limit(username, limit=30, window=60):
 # === AUTH FUNCTIONS ===
 def login_user(username, password):
     try:
-        # Sanitize input
         username = sanitize_input(username, 50)
         
-        # Check login attempts
         if login_tracker.is_locked(username):
             logger.warning(f"Login locked for {username}")
             return {"success": False, "error": f"Akaun dikunci. Cuba lagi dalam {LOCKOUT_MINUTES} minit"}
@@ -364,19 +352,17 @@ def login_user(username, password):
         if username not in users:
             login_tracker.add_attempt(username, False)
             logger.warning(f"Login attempt failed: user '{username}' not found")
-            return {"success": False, "error": "Username tidak wujud"}
+            return {"success": False, "error": "Username atau Password salah"}
         
-        # Verify with bcrypt
         if not verify_password(password, users[username]["password"]):
             login_tracker.add_attempt(username, False)
             remaining = login_tracker.get_remaining_attempts(username)
-            logger.warning(f"Login attempt failed: wrong password for '{username}' - {remaining} attempts left")
-            return {"success": False, "error": f"Password salah ({remaining} percubaan lagi)"}
+            logger.warning(f"Login attempt failed: wrong password for '{username}'")
+            return {"success": False, "error": "Username atau Password salah"}
         
         login_tracker.add_attempt(username, True)
         logger.info(f"User '{username}' logged in successfully")
         
-        # Force password change for admin with default password
         if username == "admin" and not users[username].get("password_changed", False):
             return {"success": True, "username": username, "role": users[username].get("role", "admin"), "force_change": True}
         
@@ -387,7 +373,6 @@ def login_user(username, password):
 
 def register_user(username, password, email, name=""):
     try:
-        # Validate inputs
         username = sanitize_input(username, 30)
         email = sanitize_input(email, 100)
         name = sanitize_input(name, 50)
@@ -485,7 +470,6 @@ def call_gemini(prompt):
     if not GEMINI_API_KEY:
         return None
     try:
-        # Use header instead of URL param for security
         url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
         headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
@@ -627,7 +611,6 @@ Ada apa-apa yang boleh saya bantu? Saya sedia membantu anda pada bila-bila masa.
 # SMART AI - UTAMA
 # ============================================================
 def smart_ai(username, prompt, think_mode=False, search_mode=False):
-    # Rate limit check
     if not check_rate_limit(username):
         logger.warning(f"Rate limit exceeded for {username}")
         return "Maaf, terlalu banyak permintaan. Sila tunggu sebentar."
@@ -636,7 +619,6 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
     if not limit_check["allowed"]:
         return f"Had Penggunaan Bulanan Telah Dicapai\nPenggunaan: {limit_check['used']}/{limit_check['limit']}"
 
-    # Sanitize input
     prompt = sanitize_prompt(prompt)
 
     if is_identity_question(prompt):
@@ -889,7 +871,6 @@ def apply_css():
 def login_ui():
     apply_css()
     
-    # Check for force password change
     if st.session_state.get("force_password_change", False):
         st.markdown("""
         <div style="max-width:420px; margin:0 auto; padding:40px 20px;">
@@ -961,21 +942,21 @@ def login_ui():
                             st.session_state.force_password_change = True
                         st.rerun()
                     else:
-                        st.error(result["error"])
+                        st.error("❌ Username atau Password salah")
                 else:
-                    st.warning("Sila isi username dan password")
+                    st.warning("⚠️ Sila isi username dan password")
         with col_b:
             if st.button("📝 Daftar", key="signup_btn", use_container_width=True):
                 if username and password and email:
                     result = register_user(username, password, email)
                     if result["success"]:
-                        st.success(f"Akaun '{username}' didaftarkan! Sila login.")
+                        st.success(f"✅ Akaun '{username}' berjaya didaftarkan! Sila login.")
                         if result.get("email_verification_required", False):
                             st.info("📧 Sila semak email untuk pengesahan.")
                     else:
-                        st.error(result["error"])
+                        st.error(f"❌ {result['error']}")
                 else:
-                    st.warning("Sila isi semua maklumat")
+                    st.warning("⚠️ Sila isi semua maklumat")
 
 # === SETTINGS MODAL ===
 def settings_modal():
@@ -1040,7 +1021,6 @@ def chat_ui():
     username = st.session_state.username
     user_data = get_user_data(username)
 
-    # Session timeout check
     if "session_start" in st.session_state:
         if time.time() - st.session_state.session_start > SESSION_TIMEOUT:
             st.session_state.logged_in = False
@@ -1146,7 +1126,6 @@ def chat_ui():
         </div>
         """, unsafe_allow_html=True)
 
-    # === MAIN CHAT ===
     if not st.session_state.messages:
         st.markdown(f"""
         <div style="text-align:center; padding:60px 20px;">
@@ -1164,7 +1143,6 @@ def chat_ui():
         else:
             st.markdown(f'<div class="chat-bubble-ai">{msg["content"]}</div>', unsafe_allow_html=True)
 
-    # === INPUT ===
     st.markdown("""
     <div class="input-container">
         <div class="input-wrapper">
@@ -1201,7 +1179,6 @@ def chat_ui():
     </div>
     """, unsafe_allow_html=True)
 
-    # JavaScript untuk Enter key
     st.markdown("""
     <script>
     document.addEventListener('keydown', function(e) {
