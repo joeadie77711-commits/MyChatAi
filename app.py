@@ -19,6 +19,7 @@ from urllib.parse import quote
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import logging.handlers
+import concurrent.futures
 
 # === LOGGING SETUP WITH ROTATING FILE ===
 logger = logging.getLogger(__name__)
@@ -46,6 +47,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# === THREAD POOL FOR BACKGROUND TASKS ===
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
 # === REQUESTS SESSION WITH RETRIES ===
 def get_requests_session():
@@ -497,19 +501,19 @@ def call_groq(prompt):
             data = response.json()
             content = safe_get(data, ['choices', 0, 'message', 'content'])
             if content is not None:
-                return content
-            return str(data)
+                return {"ok": True, "text": content}
+            return {"ok": False, "error": "Invalid response format"}
         logger.error(f"Groq API error: {response.status_code}")
-        return f"Ralat Groq: {response.status_code}"
+        return {"ok": False, "error": f"Ralat Groq: {response.status_code}"}
     except requests.exceptions.Timeout:
         logger.error("Groq timeout")
-        return "Ralat: Timeout - Sila cuba lagi"
+        return {"ok": False, "error": "Ralat: Timeout - Sila cuba lagi"}
     except requests.exceptions.RequestException as e:
         logger.error(f"Groq request error: {str(e)}")
-        return f"Ralat: {str(e)}"
+        return {"ok": False, "error": f"Ralat: {str(e)}"}
     except Exception as e:
         logger.error(f"Groq error: {traceback.format_exc()}")
-        return f"Ralat: {str(e)}"
+        return {"ok": False, "error": f"Ralat: {str(e)}"}
 
 def call_deepseek_r1(prompt):
     try:
@@ -526,17 +530,17 @@ def call_deepseek_r1(prompt):
             data = response.json()
             content = safe_get(data, ['choices', 0, 'message', 'content'])
             if content is not None:
-                return content
-            return str(data)
+                return {"ok": True, "text": content}
+            return {"ok": False, "error": "Invalid response format"}
         logger.error(f"DeepSeek API error: {response.status_code}")
-        return f"Ralat DeepSeek: {response.status_code}"
+        return {"ok": False, "error": f"Ralat DeepSeek: {response.status_code}"}
     except Exception as e:
         logger.error(f"DeepSeek error: {traceback.format_exc()}")
-        return f"Ralat: {str(e)}"
+        return {"ok": False, "error": f"Ralat: {str(e)}"}
 
 def call_gemini(prompt):
     if not GEMINI_API_KEY:
-        return None
+        return {"ok": False, "error": "Gemini API key not configured"}
     try:
         url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
         headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
@@ -546,17 +550,17 @@ def call_gemini(prompt):
             data = response.json()
             content = safe_get(data, ['candidates', 0, 'content', 'parts', 0, 'text'])
             if content is not None:
-                return content
-            return str(data)
+                return {"ok": True, "text": content}
+            return {"ok": False, "error": "Invalid response format"}
         logger.error(f"Gemini API error: {response.status_code}")
-        return None
+        return {"ok": False, "error": f"Gemini error: {response.status_code}"}
     except Exception as e:
         logger.error(f"Gemini error: {traceback.format_exc()}")
-        return None
+        return {"ok": False, "error": f"Ralat: {str(e)}"}
 
 def call_claude(prompt):
     if not CLAUDE_API_KEY:
-        return None
+        return {"ok": False, "error": "Claude API key not configured"}
     try:
         url = "https://api.anthropic.com/v1/messages"
         headers = {
@@ -574,17 +578,17 @@ def call_claude(prompt):
             data = response.json()
             content = safe_get(data, ['content', 0, 'text'])
             if content is not None:
-                return content
-            return str(data)
+                return {"ok": True, "text": content}
+            return {"ok": False, "error": "Invalid response format"}
         logger.error(f"Claude API error: {response.status_code}")
-        return None
+        return {"ok": False, "error": f"Claude error: {response.status_code}"}
     except Exception as e:
         logger.error(f"Claude error: {traceback.format_exc()}")
-        return None
+        return {"ok": False, "error": f"Ralat: {str(e)}"}
 
 def call_huggingface(prompt):
     if not HUGGINGFACE_API_KEY:
-        return None
+        return {"ok": False, "error": "HuggingFace API key not configured"}
     try:
         url = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"
         headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
@@ -594,17 +598,18 @@ def call_huggingface(prompt):
             result = response.json()
             if isinstance(result, list) and len(result) > 0:
                 if isinstance(result[0], dict):
-                    return result[0].get('generated_text', str(result[0]))
-                return str(result[0])
-            return str(result)
-        return None
+                    text = result[0].get('generated_text', str(result[0]))
+                    return {"ok": True, "text": text}
+                return {"ok": True, "text": str(result[0])}
+            return {"ok": True, "text": str(result)}
+        return {"ok": False, "error": f"HuggingFace error: {response.status_code}"}
     except Exception as e:
         logger.error(f"HuggingFace error: {traceback.format_exc()}")
-        return None
+        return {"ok": False, "error": f"Ralat: {str(e)}"}
 
 def call_replicate(prompt):
     if not REPLICATE_API_KEY:
-        return None
+        return {"ok": False, "error": "Replicate API key not configured"}
     try:
         url = "https://api.replicate.com/v1/predictions"
         headers = {"Authorization": f"Bearer {REPLICATE_API_KEY}", "Content-Type": "application/json"}
@@ -618,7 +623,7 @@ def call_replicate(prompt):
             prediction_id = safe_get(resp_json, ['id'])
             if not prediction_id:
                 logger.error(f"Replicate response missing id: {resp_json}")
-                return None
+                return {"ok": False, "error": "Invalid response from Replicate"}
             start_time = time.time()
             for i in range(30):
                 try:
@@ -631,28 +636,27 @@ def call_replicate(prompt):
                         status_data = status_response.json()
                         if status_data.get('status') == 'succeeded':
                             output = status_data.get('output')
-                            if isinstance(output, str):
-                                return output
-                            return str(output) if output is not None else None
+                            if output is not None:
+                                return {"ok": True, "text": str(output)}
+                            return {"ok": False, "error": "No output from Replicate"}
                         elif status_data.get('status') == 'failed':
                             logger.error(f"Replicate prediction failed: {status_data}")
-                            return None
+                            return {"ok": False, "error": "Replicate prediction failed"}
                 except Exception as e:
                     logger.error(f"Replicate status check error: {str(e)}")
                 
                 elapsed = time.time() - start_time
                 if elapsed > 60:
                     logger.error(f"Replicate prediction timeout after 60s")
-                    break
-                # Exponential backoff with cap
+                    return {"ok": False, "error": "Replicate prediction timeout"}
                 sleep_time = min(0.5 * (2 ** i), 5)
                 time.sleep(sleep_time)
-            return None
+            return {"ok": False, "error": "Replicate prediction timeout"}
         logger.error(f"Replicate API error: {response.status_code}")
-        return None
+        return {"ok": False, "error": f"Replicate error: {response.status_code}"}
     except Exception as e:
         logger.error(f"Replicate error: {traceback.format_exc()}")
-        return None
+        return {"ok": False, "error": f"Ralat: {str(e)}"}
 
 # === SMART AI DENGAN AUTO-FALLBACK ===
 def smart_ai_with_fallback(prompt):
@@ -666,19 +670,10 @@ def smart_ai_with_fallback(prompt):
     ]
     for model_name, model_func in models:
         try:
-            response = model_func(prompt)
-            if isinstance(response, str):
-                if response and not response.startswith("Ralat") and not response.startswith("❌"):
-                    logger.info(f"Success with {model_name}")
-                    return response
-            elif response is not None:
-                try:
-                    response_str = str(response)
-                    if response_str and not response_str.startswith("Ralat") and not response_str.startswith("❌"):
-                        logger.info(f"Success with {model_name} (converted)")
-                        return response_str
-                except:
-                    pass
+            result = model_func(prompt)
+            if result.get("ok"):
+                logger.info(f"Success with {model_name}")
+                return result["text"]
         except Exception as e:
             logger.error(f"Fallback {model_name} failed: {str(e)}")
             continue
@@ -732,22 +727,12 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
 
     try:
         if think_mode:
-            response = call_deepseek_r1(prompt)
+            result = call_deepseek_r1(prompt)
         else:
-            response = call_groq(prompt)
+            result = call_groq(prompt)
 
-        if isinstance(response, str):
-            if response.startswith("Ralat") or response.startswith("❌"):
-                response = smart_ai_with_fallback(prompt)
-        elif response is not None:
-            try:
-                response_str = str(response)
-                if response_str.startswith("Ralat") or response_str.startswith("❌"):
-                    response = smart_ai_with_fallback(prompt)
-                else:
-                    response = response_str
-            except:
-                response = smart_ai_with_fallback(prompt)
+        if result.get("ok"):
+            response = result["text"]
         else:
             response = smart_ai_with_fallback(prompt)
 
@@ -1019,7 +1004,7 @@ def login_ui():
         st.markdown("</div></div>", unsafe_allow_html=True)
         return
     
-    # Login UI menggunakan Streamlit widgets (tanpa HTML terpotong)
+    # Login UI menggunakan Streamlit widgets
     st.markdown("""
     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:20px;">
         <div style="max-width:420px; width:100%; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:20px; padding:40px 32px;">
@@ -1309,7 +1294,10 @@ def feature_ui(feature):
             tempoh = st.selectbox("Tempoh", ["30 minit", "60 minit"])
         if st.button("Jana RPH", use_container_width=True) and topik:
             rph = call_deepseek_r1(f"Sediakan RPH {subjek} Tahun {tahun}, topik {topik}, tempoh {tempoh}")
-            st.markdown(rph)
+            if rph.get("ok"):
+                st.markdown(rph["text"])
+            else:
+                st.error(rph.get("error", "Gagal menjana RPH"))
 
     elif feature == "Art":
         prompt = st.text_input("Huraikan gambar")
@@ -1383,7 +1371,7 @@ def feature_ui(feature):
                 clean_phone = '6' + clean_phone
             msg_encoded = quote(message)
             whatsapp_url = f"https://wa.me/{clean_phone}?text={msg_encoded}"
-            st.markdown(f'<a href="{whatsapp_url}" target="_blank"><button style="background:#25D366; color:white; padding:8px 16px; border:none; border-radius:8px; font-weight:600; cursor:pointer;">Buka WhatsApp</button></a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="{whatsapp_url}" target="_blank" style="background:#25D366; color:white; padding:8px 16px; border-radius:8px; text-decoration:none; font-weight:600; display:inline-block;">Buka WhatsApp</a>', unsafe_allow_html=True)
 
     elif feature == "Neural":
         st.markdown("""
@@ -1435,38 +1423,56 @@ def feature_ui(feature):
         """)
         if st.button("Jana Business Plan", use_container_width=True):
             response = call_deepseek_r1("Hasilkan business plan untuk startup teknologi")
-            st.markdown(response)
+            if response.get("ok"):
+                st.markdown(response["text"])
+            else:
+                st.error(response.get("error", "Gagal menjana business plan"))
 
     elif feature == "Fitness":
         goal = st.selectbox("Matlamat", ["Turun Berat", "Bina Otot", "Kekal Sihat"])
         days = st.slider("Hari seminggu", 1, 7, 3)
         if st.button("Jana Rancangan", use_container_width=True):
             response = call_deepseek_r1(f"Hasilkan rancangan senaman untuk matlamat {goal} ({days} hari seminggu)")
-            st.markdown(response)
+            if response.get("ok"):
+                st.markdown(response["text"])
+            else:
+                st.error(response.get("error", "Gagal menjana rancangan"))
 
     elif feature == "Meditation":
         duration = st.slider("Durasi (minit)", 1, 30, 10)
         if st.button("Mula Meditasi", use_container_width=True):
             response = call_deepseek_r1(f"Panduan meditasi selama {duration} minit")
-            st.markdown(response)
+            if response.get("ok"):
+                st.markdown(response["text"])
+            else:
+                st.error(response.get("error", "Gagal menjana panduan meditasi"))
 
     elif feature == "Research":
         topic = st.text_input("Topik Penyelidikan")
         if st.button("Mulakan Penyelidikan", use_container_width=True) and topic:
             response = call_deepseek_r1(f"Buat literature review untuk topik: {topic}")
-            st.markdown(response)
+            if response.get("ok"):
+                st.markdown(response["text"])
+            else:
+                st.error(response.get("error", "Gagal menjana literature review"))
 
     elif feature == "Comic":
         title = st.text_input("Tajuk Komik")
         if st.button("Hasilkan Komik", use_container_width=True) and title:
             response = call_deepseek_r1(f"Hasilkan komik bertajuk: {title}")
-            st.markdown(response)
+            if response.get("ok"):
+                st.markdown(response["text"])
+            else:
+                st.error(response.get("error", "Gagal menjana komik"))
 
     elif feature == "Game":
         game_type = st.selectbox("Jenis", ["Escape Room", "Murder Mystery", "Treasure Hunt", "Adventure"])
         if st.button("Mula Permainan", use_container_width=True):
             response = call_deepseek_r1(f"Cipta {game_type} yang menarik")
-            st.markdown(response)
+            if response.get("ok"):
+                st.markdown(response["text"])
+            else:
+                st.error(response.get("error", "Gagal menjana permainan"))
 
     elif feature == "Analytics":
         users = load_users()
