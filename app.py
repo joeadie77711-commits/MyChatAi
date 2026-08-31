@@ -22,8 +22,10 @@ from urllib.parse import quote
 # === FCNTL FALLBACK UNTUK WINDOWS ===
 try:
     import fcntl
+    HAVE_FCNTL = True
 except ImportError:
     fcntl = None
+    HAVE_FCNTL = False
 
 # === LOGGING SETUP ===
 logging.basicConfig(
@@ -62,6 +64,7 @@ try:
     ADMIN_EMAIL = st.secrets.get("ADMIN_EMAIL")
     ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD")
     if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        logger.error("ADMIN_EMAIL or ADMIN_PASSWORD missing in st.secrets")
         st.error("❌ Admin credentials not configured. Sila setup secrets.")
         st.stop()
     
@@ -95,30 +98,29 @@ class DataManager:
     def __init__(self):
         self.lock = threading.RLock()
     
+    def _write_file_atomic(self, filename, data):
+        """Atomic write using temp file and rename"""
+        temp_file = filename + ".tmp"
+        try:
+            with open(temp_file, "w") as f:
+                if HAVE_FCNTL and fcntl:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                json.dump(data, f, indent=2)
+                if HAVE_FCNTL and fcntl:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            os.replace(temp_file, filename)
+            return True
+        except Exception as e:
+            logger.error(f"Atomic write error: {traceback.format_exc()}")
+            return False
+    
     def save_users(self, data):
         with self.lock:
-            try:
-                with open(USER_DATA_FILE, "w") as f:
-                    if fcntl:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                    json.dump(data, f, indent=2)
-                    if fcntl:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            except Exception as e:
-                logger.error(f"Error saving users: {traceback.format_exc()}")
-                st.error("Gagal menyimpan data pengguna")
+            self._write_file_atomic(USER_DATA_FILE, data)
     
     def save_chats(self, data):
         with self.lock:
-            try:
-                with open(CHAT_HISTORY_FILE, "w") as f:
-                    if fcntl:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                    json.dump(data, f, indent=2)
-                    if fcntl:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            except Exception as e:
-                logger.error(f"Error saving chats: {traceback.format_exc()}")
+            self._write_file_atomic(CHAT_HISTORY_FILE, data)
     
     def save_usage(self, username, data):
         with self.lock:
@@ -126,18 +128,13 @@ class DataManager:
             try:
                 if os.path.exists(USAGE_FILE):
                     with open(USAGE_FILE, "r") as f:
-                        if fcntl:
+                        if HAVE_FCNTL and fcntl:
                             fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                         all_data = json.load(f)
-                        if fcntl:
+                        if HAVE_FCNTL and fcntl:
                             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 all_data[username] = data
-                with open(USAGE_FILE, "w") as f:
-                    if fcntl:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                    json.dump(all_data, f, indent=2)
-                    if fcntl:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                self._write_file_atomic(USAGE_FILE, all_data)
             except Exception as e:
                 logger.error(f"Error saving usage: {traceback.format_exc()}")
 
@@ -239,10 +236,10 @@ def load_users():
     if os.path.exists(USER_DATA_FILE):
         try:
             with open(USER_DATA_FILE, "r") as f:
-                if fcntl:
+                if HAVE_FCNTL and fcntl:
                     fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                 data = json.load(f)
-                if fcntl:
+                if HAVE_FCNTL and fcntl:
                     fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 return data
         except Exception as e:
@@ -274,10 +271,10 @@ def load_chats():
     if os.path.exists(CHAT_HISTORY_FILE):
         try:
             with open(CHAT_HISTORY_FILE, "r") as f:
-                if fcntl:
+                if HAVE_FCNTL and fcntl:
                     fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                 data = json.load(f)
-                if fcntl:
+                if HAVE_FCNTL and fcntl:
                     fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 return data
         except:
@@ -291,10 +288,10 @@ def load_usage(username):
     if os.path.exists(USAGE_FILE):
         try:
             with open(USAGE_FILE, "r") as f:
-                if fcntl:
+                if HAVE_FCNTL and fcntl:
                     fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                 data = json.load(f)
-                if fcntl:
+                if HAVE_FCNTL and fcntl:
                     fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             return data.get(username, {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year})
         except:
@@ -341,7 +338,7 @@ def get_usage_status(username):
         "used": usage["count"],
         "limit": MAX_FREE_REQUESTS,
         "remaining": remaining,
-        "percentage": round((usage["count"] / MAX_FREE_REQUESTS) * 100, 1)
+        "percentage": round((usage["count"] / MAX_FREE_REQUESTS) * 100, 1) if MAX_FREE_REQUESTS > 0 else 0
     }
 
 def is_premium(username):
@@ -427,7 +424,7 @@ def register_user(username, password, email, name=""):
             "role": "user",
             "email": email,
             "name": name or username,
-            "avatar": f"https://ui-avatars.com/api/?name={name or username}&background=4d6bfe&color=fff&size=40",
+            "avatar": f"https://ui-avatars.com/api/?name={quote(name or username)}&background=4d6bfe&color=fff&size=40",
             "settings": {"language": "Malay", "dark_mode": True},
             "created_at": datetime.datetime.now().isoformat(),
             "premium_until": None,
@@ -544,7 +541,10 @@ def call_huggingface(prompt):
         payload = {"inputs": prompt}
         response = requests.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
-            return response.json()[0]['generated_text']
+            result = response.json()
+            if isinstance(result, list) and len(result) > 0:
+                return result[0].get('generated_text', str(result[0]))
+            return str(result)
         return None
     except Exception as e:
         logger.error(f"HuggingFace error: {traceback.format_exc()}")
@@ -568,7 +568,10 @@ def call_replicate(prompt):
                 if status_response.status_code == 200:
                     status_data = status_response.json()
                     if status_data['status'] == 'succeeded':
-                        return status_data['output']
+                        output = status_data.get('output')
+                        if isinstance(output, str):
+                            return output
+                        return str(output) if output else None
                     elif status_data['status'] == 'failed':
                         return None
                 time.sleep(1)
@@ -594,9 +597,18 @@ def smart_ai_with_fallback(prompt):
         try:
             response = model_func(prompt)
             # Handle non-string responses
-            if isinstance(response, str) and response and not response.startswith("Ralat") and not response.startswith("❌"):
-                logger.info(f"Success with {model_name}")
-                return response
+            if isinstance(response, str):
+                if response and not response.startswith("Ralat") and not response.startswith("❌"):
+                    logger.info(f"Success with {model_name}")
+                    return response
+            elif response is not None:
+                try:
+                    response_str = str(response)
+                    if response_str and not response_str.startswith("Ralat") and not response_str.startswith("❌"):
+                        logger.info(f"Success with {model_name} (converted)")
+                        return response_str
+                except:
+                    pass
         except Exception as e:
             logger.error(f"Fallback {model_name} failed: {str(e)}")
             continue
@@ -971,7 +983,7 @@ def login_ui():
                             st.session_state.force_password_change = True
                         st.rerun()
                     else:
-                        st.error("❌ Username atau Password salah")
+                        st.error(result.get("error", "❌ Username atau Password salah"))
                 else:
                     st.warning("⚠️ Sila isi username dan password")
         with col_b:
@@ -1025,7 +1037,8 @@ def settings_modal():
         st.markdown("---")
         st.markdown("### Usage Status")
         usage = get_usage_status(username)
-        st.progress(usage["percentage"] / 100)
+        if MAX_FREE_REQUESTS > 0:
+            st.progress(usage["percentage"] / 100)
         st.caption(f"Digunakan: {usage['used']} / {usage['limit']} (Bulanan)")
         st.caption(f"Baki: {usage['remaining']} request")
 
