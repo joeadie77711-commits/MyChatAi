@@ -9,6 +9,8 @@ import re
 import time
 from io import BytesIO
 from PIL import Image
+import base64
+import random
 
 # === PAGE CONFIG ===
 st.set_page_config(
@@ -22,9 +24,22 @@ st.set_page_config(
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
     OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
-    CRAZYROUTER_API_KEY = st.secrets.get("CRAZYROUTER_API_KEY", "")
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    CLAUDE_API_KEY = st.secrets.get("CLAUDE_API_KEY", "")
+    HUGGINGFACE_API_KEY = st.secrets.get("HUGGINGFACE_API_KEY", "")
+    REPLICATE_API_KEY = st.secrets.get("REPLICATE_API_KEY", "")
+    STABILITY_API_KEY = st.secrets.get("STABILITY_API_KEY", "")
+    UNSPLASH_API_KEY = st.secrets.get("UNSPLASH_API_KEY", "")
+    POLLINATIONS_API_KEY = st.secrets.get("POLLINATIONS_API_KEY", "")
+    ELEVENLABS_API_KEY = st.secrets.get("ELEVENLABS_API_KEY", "")
+    WEATHER_API_KEY = st.secrets.get("WEATHER_API_KEY", "")
+    NEWS_API_KEY = st.secrets.get("NEWS_API_KEY", "")
+    SEARCH_API_KEY = st.secrets.get("SEARCH_API_KEY", "")
     ADMIN_EMAIL = st.secrets.get("ADMIN_EMAIL", "joe.adie77711@gmail.com")
     MAX_FREE_REQUESTS = st.secrets.get("MAX_FREE_REQUESTS", 1000)
+    DISCORD_WEBHOOK = st.secrets.get("DISCORD_WEBHOOK", "")
+    TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 except KeyError as e:
     st.error(f"❌ Missing required secret: {e}")
     st.stop()
@@ -51,7 +66,10 @@ def load_users():
             "email": ADMIN_EMAIL,
             "name": "Admin",
             "avatar": "https://ui-avatars.com/api/?name=Admin&background=4d6bfe&color=fff&size=40",
-            "settings": {"language": "Malay", "dark_mode": True}
+            "settings": {"language": "Malay", "dark_mode": True},
+            "created_at": datetime.datetime.now().isoformat(),
+            "premium_until": None,
+            "total_requests": 0
         }
     }
     save_users(default)
@@ -89,7 +107,7 @@ def save_usage(username, data):
 
 def check_usage_limit(username):
     user_data = load_users().get(username, {})
-    if user_data.get("role") == "admin":
+    if user_data.get("role") == "admin" or is_premium(username):
         return {"allowed": True, "used": 0, "limit": 999999}
     usage = load_usage(username)
     now = datetime.datetime.now()
@@ -107,6 +125,10 @@ def increment_usage(username):
         usage = {"count": 0, "month": now.month, "year": now.year}
     usage["count"] += 1
     save_usage(username, usage)
+    users = load_users()
+    if username in users:
+        users[username]["total_requests"] = users[username].get("total_requests", 0) + 1
+        save_users(users)
     return usage["count"]
 
 def get_usage_status(username):
@@ -122,6 +144,17 @@ def get_usage_status(username):
         "remaining": remaining,
         "percentage": round((usage["count"] / MAX_FREE_REQUESTS) * 100, 1)
     }
+
+def is_premium(username):
+    user_data = load_users().get(username, {})
+    premium_until = user_data.get("premium_until")
+    if premium_until:
+        try:
+            expiry = datetime.datetime.fromisoformat(premium_until)
+            return expiry > datetime.datetime.now()
+        except:
+            return False
+    return False
 
 # === AUTH FUNCTIONS ===
 def login_user(username, password):
@@ -144,7 +177,10 @@ def register_user(username, password, email, name=""):
         "email": email,
         "name": name or username,
         "avatar": f"https://ui-avatars.com/api/?name={name or username}&background=4d6bfe&color=fff&size=40",
-        "settings": {"language": "Malay", "dark_mode": True}
+        "settings": {"language": "Malay", "dark_mode": True},
+        "created_at": datetime.datetime.now().isoformat(),
+        "premium_until": None,
+        "total_requests": 0
     }
     save_users(users)
     return {"success": True, "username": username}
@@ -191,11 +227,111 @@ def call_deepseek_r1(prompt):
     except Exception as e:
         return f"Ralat: {str(e)}"
 
+# === TAMBAHAN: FUNGSI AI BARU DENGAN API YANG ADA ===
+def call_gemini(prompt):
+    if not GEMINI_API_KEY:
+        return None
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        response = requests.post(url, json=payload, timeout=30)
+        if response.status_code == 200:
+            data = response.json()
+            return data['candidates'][0]['content']['parts'][0]['text']
+        return None
+    except:
+        return None
+
+def call_claude(prompt):
+    if not CLAUDE_API_KEY:
+        return None
+    try:
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {
+            "x-api-key": CLAUDE_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "claude-3-haiku-20240307",
+            "max_tokens": 2048,
+            "messages": [{"role": "user", "content": prompt}]
+        }
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        if response.status_code == 200:
+            return response.json()['content'][0]['text']
+        return None
+    except:
+        return None
+
+def call_huggingface(prompt):
+    if not HUGGINGFACE_API_KEY:
+        return None
+    try:
+        url = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"
+        headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
+        payload = {"inputs": prompt}
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        if response.status_code == 200:
+            return response.json()[0]['generated_text']
+        return None
+    except:
+        return None
+
+def call_replicate(prompt):
+    if not REPLICATE_API_KEY:
+        return None
+    try:
+        url = "https://api.replicate.com/v1/predictions"
+        headers = {"Authorization": f"Bearer {REPLICATE_API_KEY}", "Content-Type": "application/json"}
+        payload = {
+            "version": "02e509c789964a7ea8736978a43525956ef40397be9033abf9fd2badfe68c9e3",
+            "input": {"prompt": prompt}
+        }
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        if response.status_code == 201:
+            prediction_id = response.json()['id']
+            for _ in range(30):
+                status_response = requests.get(f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers)
+                if status_response.status_code == 200:
+                    status_data = status_response.json()
+                    if status_data['status'] == 'succeeded':
+                        return status_data['output']
+                    elif status_data['status'] == 'failed':
+                        return None
+                time.sleep(1)
+            return None
+        return None
+    except:
+        return None
+
 # ============================================================
-# 🆕 TAMBAHAN: DETECT SOALAN "SIAPA ANDA"
+# 🆕 SMART AI DENGAN AUTO-FALLBACK KE SEMUA API
+# ============================================================
+def smart_ai_with_fallback(prompt):
+    """Cuba semua AI models satu persatu sampai dapat response"""
+    # Senarai models mengikut priority (cepat ke lambat)
+    models = [
+        ("Groq", call_groq),
+        ("DeepSeek", call_deepseek_r1),
+        ("Gemini", call_gemini),
+        ("Claude", call_claude),
+        ("HuggingFace", call_huggingface),
+        ("Replicate", call_replicate)
+    ]
+    for model_name, model_func in models:
+        try:
+            response = model_func(prompt)
+            if response and not response.startswith("Ralat") and not response.startswith("❌"):
+                return response
+        except:
+            continue
+    return "❌ Maaf, semua model AI tidak dapat diakses. Sila cuba lagi nanti."
+
+# ============================================================
+# 🆕 DETECT SOALAN "SIAPA ANDA"
 # ============================================================
 def is_identity_question(prompt):
-    """Detect jika pengguna bertanya siapa AI"""
     identity_keywords = [
         "siapa anda", "siapa kamu", "siapa awak", "awak siapa", "anda siapa",
         "kamu siapa", "siapa kau", "kau siapa", "who are you", "who are u",
@@ -212,7 +348,6 @@ def is_identity_question(prompt):
     return False
 
 def get_identity_response():
-    """Response untuk soalan identiti"""
     return """👋 **Perkenalkan Diri Saya!**
 
 Saya **Joe**, AI Assistant buatan dari **MyChatAI Pro**! 🤖
@@ -222,7 +357,7 @@ Saya **Joe**, AI Assistant buatan dari **MyChatAI Pro**! 🤖
 📌 **Tentang Saya:**
 - 🏷️ **Nama:** Joe
 - 🧠 **Dicipta oleh:** Pasukan MyChatAI Pro
-- 💡 **Model AI:** Groq Llama 3.1 + DeepSeek-R1 + Gemini 2.0 Flash
+- 💡 **Model AI:** Groq · DeepSeek-R1 · Gemini · Claude · HuggingFace · Replicate
 - 🎯 **Tujuan:** Membantu anda dengan pelbagai tugasan harian
 
 ✨ **Kelebihan Saya:**
@@ -250,29 +385,29 @@ Saya **Joe**, AI Assistant buatan dari **MyChatAI Pro**! 🤖
 
 ❓ **Ada apa-apa yang nak ditanya?** Saya sedia membantu 24/7! 😊
 
-💬 *"Saya Joe, sedia membantu anda dengan sepenuh hati!"* 🚀"""
+💬 *"Saya Joe dari MyChatAI Pro, sedia membantu anda dengan sepenuh hati!"* 🚀"""
 
 # ============================================================
-# SMART AI - DENGAN DETECT IDENTITY
+# SMART AI - UTAMA
 # ============================================================
 def smart_ai(username, prompt, think_mode=False, search_mode=False):
     limit_check = check_usage_limit(username)
     if not limit_check["allowed"]:
         return f"Had Penggunaan Bulanan Telah Dicapai\nPenggunaan: {limit_check['used']}/{limit_check['limit']}"
-    
-    # 🆕 CEK SOALAN IDENTITI
+
     if is_identity_question(prompt):
         return get_identity_response()
-    
-    # PROSES SEPERTI BIASA
+
     if think_mode:
         response = call_deepseek_r1(prompt)
     else:
+        # Guna Groq dulu, kalau fail baru fallback ke AI lain
         response = call_groq(prompt)
-    
-    if "Ralat" in response[:20]:
-        response = call_deepseek_r1(prompt)
-    
+
+    # Jika Groq gagal, try semua AI lain
+    if response.startswith("Ralat") or response.startswith("❌"):
+        response = smart_ai_with_fallback(prompt)
+
     increment_usage(username)
     return response
 
@@ -284,24 +419,192 @@ def apply_css():
     * { font-family: 'Inter', sans-serif; }
     .stApp { background: #0d0d0d; }
     .stSidebar { background: rgba(255,255,255,0.02) !important; border-right: 1px solid rgba(255,255,255,0.04) !important; }
-    .chat-bubble-user { background: linear-gradient(135deg, #4d6bfe, #7c3aed); color: white; padding: 12px 18px; border-radius: 18px 18px 4px 18px; max-width: 80%; margin-left: auto; margin-bottom: 12px; }
-    .chat-bubble-ai { background: rgba(255,255,255,0.05); color: #e8edf5; padding: 12px 18px; border-radius: 18px 18px 18px 4px; max-width: 80%; margin-right: auto; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.06); }
-    .input-container { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(13,13,13,0.95); padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.06); backdrop-filter: blur(20px); z-index: 100; }
-    .input-wrapper { max-width: 900px; margin: 0 auto; display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.04); border-radius: 14px; padding: 6px 6px 6px 16px; border: 1px solid rgba(255,255,255,0.06); }
-    .input-wrapper input { flex: 1; background: transparent; border: none; outline: none; color: #e8edf5; font-size: 15px; padding: 10px 0; }
-    .input-wrapper input::placeholder { color: #5a5a6a; }
-    .input-btn.active { color: #4d6bfe; background: rgba(77,107,254,0.15); }
-    .input-btn.send-btn { background: linear-gradient(135deg, #4d6bfe, #7c3aed); color: white; padding: 10px 18px; border-radius: 10px; font-weight: 600; }
-    .profile-section { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.04); margin-top: auto; }
-    .profile-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
-    .profile-name { flex: 1; font-size: 14px; font-weight: 600; color: #e8edf5; }
-    .profile-email { font-size: 11px; color: #5a5a6a; }
-    .settings-btn { background: transparent; border: none; color: #5a5a6a; cursor: pointer; font-size: 18px; padding: 4px 8px; border-radius: 6px; }
-    .settings-btn:hover { background: rgba(255,255,255,0.05); color: #e8edf5; }
-    .new-chat-btn { background: linear-gradient(135deg, #4d6bfe, #7c3aed); color: white; border: none; border-radius: 10px; padding: 10px 16px; font-weight: 600; width: 100%; cursor: pointer; margin-bottom: 12px; }
-    .history-item { padding: 8px 12px; border-radius: 8px; margin-bottom: 4px; cursor: pointer; font-size: 13px; color: #8a8a9a; transition: all 0.2s; }
-    .history-item:hover { background: rgba(255,255,255,0.04); color: #e8edf5; }
-    @media (max-width: 768px) { .stSidebar { width: 280px !important; } }
+
+    .chat-bubble-user {
+        background: linear-gradient(135deg, #4d6bfe, #7c3aed);
+        color: white;
+        padding: 12px 18px;
+        border-radius: 18px 18px 4px 18px;
+        max-width: 80%;
+        margin-left: auto;
+        margin-bottom: 12px;
+    }
+    .chat-bubble-ai {
+        background: rgba(255,255,255,0.05);
+        color: #e8edf5;
+        padding: 12px 18px;
+        border-radius: 18px 18px 18px 4px;
+        max-width: 80%;
+        margin-right: auto;
+        margin-bottom: 12px;
+        border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .input-container {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: rgba(13,13,13,0.95);
+        padding: 16px 20px;
+        border-top: 1px solid rgba(255,255,255,0.06);
+        backdrop-filter: blur(20px);
+        z-index: 100;
+    }
+    .input-wrapper {
+        max-width: 900px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: rgba(255,255,255,0.04);
+        border-radius: 14px;
+        padding: 6px 6px 6px 16px;
+        border: 1px solid rgba(255,255,255,0.06);
+    }
+    .input-wrapper input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: #e8edf5;
+        font-size: 15px;
+        padding: 10px 0;
+    }
+    .input-wrapper input::placeholder {
+        color: #5a5a6a;
+    }
+
+    .input-btn.active {
+        color: #4d6bfe;
+        background: rgba(77,107,254,0.15);
+    }
+    .input-btn.send-btn {
+        background: linear-gradient(135deg, #4d6bfe, #7c3aed);
+        color: white;
+        padding: 10px 18px;
+        border-radius: 10px;
+        font-weight: 600;
+    }
+
+    .profile-section {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-top: 1px solid rgba(255,255,255,0.04);
+        margin-top: auto;
+    }
+    .profile-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+    .profile-name {
+        flex: 1;
+        font-size: 14px;
+        font-weight: 600;
+        color: #e8edf5;
+    }
+    .profile-email {
+        font-size: 11px;
+        color: #5a5a6a;
+    }
+
+    .settings-btn {
+        background: transparent;
+        border: none;
+        color: #5a5a6a;
+        cursor: pointer;
+        font-size: 18px;
+        padding: 4px 8px;
+        border-radius: 6px;
+    }
+    .settings-btn:hover {
+        background: rgba(255,255,255,0.05);
+        color: #e8edf5;
+    }
+
+    .new-chat-btn {
+        background: linear-gradient(135deg, #4d6bfe, #7c3aed);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 10px 16px;
+        font-weight: 600;
+        width: 100%;
+        cursor: pointer;
+        margin-bottom: 12px;
+    }
+
+    .history-item {
+        padding: 8px 12px;
+        border-radius: 8px;
+        margin-bottom: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        color: #8a8a9a;
+        transition: all 0.2s;
+    }
+    .history-item:hover {
+        background: rgba(255,255,255,0.04);
+        color: #e8edf5;
+    }
+
+    .brand-title {
+        text-align: center;
+        padding: 16px 0 10px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+        margin-bottom: 12px;
+    }
+    .brand-title .main {
+        font-size: 26px;
+        font-weight: 800;
+        background: linear-gradient(135deg, #4d6bfe, #7c3aed);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: -0.5px;
+    }
+    .brand-title .version {
+        font-size: 10px;
+        color: #5a5a6a;
+        letter-spacing: 1px;
+        margin-top: 2px;
+    }
+    .brand-title .tagline {
+        font-size: 11px;
+        color: #4a4a5a;
+        margin-top: 2px;
+        letter-spacing: 0.5px;
+    }
+
+    .premium-badge {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        padding: 2px 12px;
+        border-radius: 12px;
+        font-size: 10px;
+        font-weight: 700;
+        color: white;
+        display: inline-block;
+    }
+    .status-online {
+        color: #10b981;
+        font-size: 10px;
+    }
+
+    .footer-credit {
+        text-align: center;
+        padding: 12px 0 8px 0;
+        color: #3a3a4a;
+        font-size: 10px;
+        border-top: 1px solid rgba(255,255,255,0.03);
+        margin-top: 10px;
+    }
+
+    @media (max-width: 768px) {
+        .stSidebar { width: 280px !important; }
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -314,7 +617,8 @@ def login_ui():
             <div style="text-align:center; margin-bottom:30px;">
                 <div style="font-size:48px; margin-bottom:8px;">💬</div>
                 <h1 style="font-size:32px; font-weight:800; background:linear-gradient(135deg,#4d6bfe,#7c3aed); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">MyChatAI Pro</h1>
-                <p style="color:#8a8a9a; font-size:14px;">DeepSeek-R1 · Groq · 1000 Request Percuma</p>
+                <p style="color:#8a8a9a; font-size:14px;">Groq · DeepSeek-R1 · Gemini · Claude</p>
+                <p style="color:#5a5a6a; font-size:12px;">1000 Request Percuma · Premium Available</p>
             </div>
             <div style="display:flex; flex-direction:column; gap:12px;">
                 <input type="text" placeholder="Username" id="login_user" style="width:100%; padding:14px 18px; border-radius:12px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.02); color:#e8edf5; font-size:15px; outline:none;">
@@ -326,13 +630,13 @@ def login_ui():
         </div>
     </div>
     """, unsafe_allow_html=True)
-    
+
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         username = st.text_input("Username", key="login_user_input", placeholder="", label_visibility="collapsed")
         password = st.text_input("Password", type="password", key="login_pass_input", placeholder="", label_visibility="collapsed")
         email = st.text_input("Email", key="login_email_input", placeholder="", label_visibility="collapsed")
-        
+
         col_a, col_b = st.columns(2)
         with col_a:
             if st.button("🔓 Login", key="login_btn", use_container_width=True):
@@ -363,19 +667,19 @@ def login_ui():
 def settings_modal():
     username = st.session_state.username
     user_data = get_user_data(username)
-    
+
     with st.sidebar:
         st.markdown("---")
         st.markdown("### ⚙️ Settings")
-        
+
         lang = st.selectbox("🌐 Bahasa", ["Malay", "English", "Chinese"], index=0)
         dark_mode = st.toggle("🌙 Dark Mode", value=True)
-        
+
         st.markdown("#### 🔑 Tukar Password")
         old_pass = st.text_input("Password Lama", type="password", key="old_pass")
         new_pass = st.text_input("Password Baru", type="password", key="new_pass")
         confirm_pass = st.text_input("Confirm Password", type="password", key="confirm_pass")
-        
+
         if st.button("💾 Tukar Password", use_container_width=True):
             users = load_users()
             if username in users:
@@ -388,26 +692,35 @@ def settings_modal():
                         st.error("Password baru tidak sama atau kurang 6 aksara")
                 else:
                     st.error("Password lama salah")
-        
+
         st.markdown("---")
-        if st.button("🚪 Logout", use_container_width=True):
-            st.session_state.logged_in = False
-            st.rerun()
-        
+        st.markdown("### 📊 Usage Status")
+        usage = get_usage_status(username)
+        st.progress(usage["percentage"] / 100)
+        st.caption(f"Digunakan: {usage['used']} / {usage['limit']} (Bulanan)")
+        st.caption(f"📅 Baki: {usage['remaining']} request")
+
         st.markdown("---")
         st.markdown("### 📝 Help & Feedback")
         feedback = st.text_area("Hantar feedback atau laporkan isu:", height=80)
         if st.button("📤 Hantar Feedback", use_container_width=True):
+            if DISCORD_WEBHOOK:
+                try:
+                    data = {"content": f"📝 Feedback dari {username}: {feedback}"}
+                    requests.post(DISCORD_WEBHOOK, json=data, timeout=10)
+                except:
+                    pass
             st.success("✅ Terima kasih! Feedback anda akan diproses.")
-        
+
         st.markdown("---")
         st.caption("MyChatAI Pro v42.0")
+        st.caption(f"🤖 {username} | {st.session_state.role}")
 
 # === CHAT UI ===
 def chat_ui():
     username = st.session_state.username
     user_data = get_user_data(username)
-    
+
     if "messages" not in st.session_state:
         st.session_state.messages = []
     if "think_mode" not in st.session_state:
@@ -416,12 +729,20 @@ def chat_ui():
         st.session_state.search_mode = False
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = load_chats().get(username, [])
-    
+    if "show_settings" not in st.session_state:
+        st.session_state.show_settings = False
+
     apply_css()
-    
+
     with st.sidebar:
-        st.markdown("### 💬 MyChatAI")
-        
+        st.markdown("""
+        <div class="brand-title">
+            <div class="main">💬 MyChatAI Pro</div>
+            <div class="version">v42.0</div>
+            <div class="tagline">✨ Smart AI Assistant</div>
+        </div>
+        """, unsafe_allow_html=True)
+
         if st.button("➕ New Chat", key="new_chat_btn", use_container_width=True):
             if st.session_state.messages:
                 history = load_chats()
@@ -437,64 +758,67 @@ def chat_ui():
                 st.session_state.chat_history = history.get(username, [])
             st.session_state.messages = []
             st.rerun()
-        
+
         search_query = st.text_input("🔍 Cari sejarah...", key="search_history", placeholder="Taip untuk cari...", label_visibility="collapsed")
-        
+
         features = [
             "📝 RPH", "🎨 Art", "🎬 Video", "🎵 Music",
             "📊 Invois", "📱 WhatsApp", "🧠 Neural", "🚗 Roadtax",
             "🆔 IC", "🏗️ Kontraktor", "💼 Business", "🏋️ Fitness",
-            "🧘 Meditation", "📚 Research", "🎨 Comic", "🎮 Game", "📊 Analytics"
+            "🧘 Meditation", "📚 Research", "🎨 Comic", "🎮 Game",
+            "📊 Analytics"
         ]
         selected = st.selectbox("📂 Ciri-ciri", ["-- Pilih --"] + features, key="feature_select", label_visibility="collapsed")
         if selected != "-- Pilih --":
             st.session_state.current_tab = selected
             st.rerun()
-        
+
         st.markdown("---")
         st.markdown("### 📜 Sejarah")
-        
+
         history = load_chats().get(username, [])
         if search_query:
             history = [h for h in history if search_query.lower() in h.get("title", "").lower()]
-        
+
         today = datetime.datetime.now().date()
         this_week = today - datetime.timedelta(days=7)
-        
+
         for chat in reversed(history[-50:]):
             chat_time = datetime.datetime.fromisoformat(chat.get("time", datetime.datetime.now().isoformat()))
             title = chat.get("title", "Chat")[:40]
-            
-            if chat_time.date() == today:
-                label = "Hari ini"
-            elif chat_time.date() > this_week:
-                label = "Minggu ini"
-            else:
-                label = chat_time.strftime("%B")
-            
             if st.button(f"💬 {title}", key=f"hist_{chat.get('time', '')}", use_container_width=True):
                 st.session_state.messages = chat.get("messages", [])
                 st.rerun()
-        
+
         st.markdown("---")
+
+        if is_premium(username):
+            st.markdown('<span class="premium-badge">⭐ PREMIUM</span>', unsafe_allow_html=True)
+
         st.markdown(f"""
         <div class="profile-section">
             <img src="{user_data.get('avatar', DEFAULT_AVATAR)}" class="profile-avatar">
             <div>
-                <div class="profile-name">{user_data.get('name', username)}</div>
+                <div class="profile-name">{user_data.get('name', username)} <span class="status-online">● Online</span></div>
                 <div class="profile-email">{user_data.get('email', '')}</div>
             </div>
             <button class="settings-btn" onclick="document.getElementById('settings_btn').click();">⚙️</button>
         </div>
         """, unsafe_allow_html=True)
-        
+
         if st.button("⚙️", key="settings_btn", help="Settings"):
             st.session_state.show_settings = not st.session_state.get("show_settings", False)
             st.rerun()
-        
+
         if st.session_state.get("show_settings", False):
             settings_modal()
-    
+
+        st.markdown("""
+        <div class="footer-credit">
+            © 2026 <span style="color:#ec4899;">❤</span> MyChatAI Pro
+        </div>
+        """, unsafe_allow_html=True)
+
     # === MAIN CHAT ===
     if not st.session_state.messages:
         st.markdown(f"""
@@ -503,21 +827,22 @@ def chat_ui():
             <h2 style="color:#e8edf5; font-weight:600;">Selamat datang, {user_data.get('name', username)}!</h2>
             <p style="color:#8a8a9a; font-size:16px;">Tanya apa-apa atau mula chat dengan AI.</p>
             <p style="color:#5a5a6a; font-size:13px; margin-top:8px;">💡 Tekan Enter untuk hantar</p>
+            <p style="color:#4a4a5a; font-size:11px; margin-top:4px;">🤖 Groq · DeepSeek · Gemini · Claude · HuggingFace · Replicate</p>
         </div>
         """, unsafe_allow_html=True)
-    
+
     for msg in st.session_state.messages:
         if msg["role"] == "user":
             st.markdown(f'<div class="chat-bubble-user">{msg["content"]}</div>', unsafe_allow_html=True)
         else:
             st.markdown(f'<div class="chat-bubble-ai">🤖 {msg["content"]}</div>', unsafe_allow_html=True)
-    
+
     # === INPUT ===
     st.markdown("""
     <div class="input-container">
         <div class="input-wrapper">
     """, unsafe_allow_html=True)
-    
+
     col1, col2, col3, col4 = st.columns([6, 1.2, 1.2, 1.5])
     with col1:
         user_input = st.text_input("", key="chat_input", placeholder="Taip mesej... (Enter untuk hantar)", label_visibility="collapsed")
@@ -539,12 +864,12 @@ def chat_ui():
                     response = smart_ai(username, user_input, st.session_state.think_mode, st.session_state.search_mode)
                 st.session_state.messages.append({"role": "ai", "content": response})
                 st.rerun()
-    
+
     st.markdown("""
         </div>
     </div>
     """, unsafe_allow_html=True)
-    
+
     # JavaScript untuk Enter key
     st.markdown("""
     <script>
@@ -569,9 +894,9 @@ def chat_ui():
 # === FEATURE UI ===
 def feature_ui(feature):
     username = st.session_state.username
-    
+
     st.markdown(f"### {feature}")
-    
+
     if feature == "📝 RPH":
         col1, col2 = st.columns(2)
         with col1:
@@ -583,7 +908,7 @@ def feature_ui(feature):
         if st.button("Jana RPH", use_container_width=True) and topik:
             rph = call_deepseek_r1(f"Sediakan RPH {subjek} Tahun {tahun}, topik {topik}, tempoh {tempoh}")
             st.markdown(rph)
-    
+
     elif feature == "🎨 Art":
         prompt = st.text_input("Huraikan gambar")
         if st.button("Hasilkan", use_container_width=True) and prompt:
@@ -597,7 +922,7 @@ def feature_ui(feature):
                     st.error("Gagal menghasilkan gambar")
             except:
                 st.error("Ralat")
-    
+
     elif feature == "🎬 Video":
         prompt = st.text_area("Huraikan video", height=80)
         duration = st.slider("Durasi (saat)", 3, 15, 5)
@@ -612,7 +937,7 @@ def feature_ui(feature):
                         st.error("Gagal menghasilkan video")
                 except:
                     st.error("Ralat")
-    
+
     elif feature == "🎵 Music":
         st.info("🎵 Music Generator - Hasilkan lagu dengan TTS atau Suno")
         mode = st.radio("Pilih Mod:", ["TTS (Percuma)", "Suno (Lagu Sebenar)"], horizontal=True)
@@ -631,7 +956,7 @@ def feature_ui(feature):
                     st.error("Ralat")
             else:
                 st.warning("Suno API memerlukan setup tambahan. Guna TTS dahulu.")
-    
+
     elif feature == "📊 Invois":
         company = st.text_input("Nama Syarikat")
         customer = st.text_input("Nama Pelanggan")
@@ -646,7 +971,7 @@ def feature_ui(feature):
             Jumlah: RM {jumlah:,.2f}
             Tarikh: {datetime.datetime.now().strftime('%d %B %Y')}
             """)
-    
+
     elif feature == "📱 WhatsApp":
         phone = st.text_input("No Telefon", placeholder="60123456789")
         message = st.text_area("Mesej", height=100)
@@ -657,7 +982,7 @@ def feature_ui(feature):
             msg_encoded = requests.utils.quote(message)
             whatsapp_url = f"https://wa.me/{clean_phone}?text={msg_encoded}"
             st.markdown(f'<a href="{whatsapp_url}" target="_blank"><button style="background:#25D366; color:white; padding:8px 16px; border:none; border-radius:8px; font-weight:600; cursor:pointer;">Buka WhatsApp</button></a>', unsafe_allow_html=True)
-    
+
     elif feature == "🧠 Neural":
         st.markdown("""
         Neural Networks adalah sistem komputasi yang terinspirasi dari otak manusia.
@@ -673,7 +998,7 @@ def feature_ui(feature):
         4. Transformers - Asas ChatGPT
         5. GANs - Menghasilkan data baru
         """)
-    
+
     elif feature == "🚗 Roadtax":
         st.info("Untuk semakan sebenar, gunakan aplikasi MyJPJ")
         st.markdown("""
@@ -682,7 +1007,7 @@ def feature_ui(feature):
         - Saman: 2 saman (RM 600)
         - Insurans: AKTIF
         """)
-    
+
     elif feature == "🆔 IC":
         st.info("Untuk semakan sebenar, gunakan portal rasmi")
         st.markdown("""
@@ -691,13 +1016,13 @@ def feature_ui(feature):
         - BPN: LAYAK (RM 1,200)
         - BKC: LAYAK (RM 250)
         """)
-    
+
     elif feature == "🏗️ Kontraktor":
         tender_name = st.text_input("Nama Projek")
         tender_budget = st.number_input("Bajet (RM)", min_value=0.0, value=0.0)
         if st.button("Buka Tender", use_container_width=True) and tender_name and tender_budget > 0:
             st.success(f"Tender '{tender_name}' berjaya dibuka")
-    
+
     elif feature == "💼 Business":
         st.markdown("""
         - Business Plan
@@ -709,38 +1034,38 @@ def feature_ui(feature):
         if st.button("Jana Business Plan", use_container_width=True):
             response = call_deepseek_r1("Hasilkan business plan untuk startup teknologi")
             st.markdown(response)
-    
+
     elif feature == "🏋️ Fitness":
         goal = st.selectbox("Matlamat", ["Turun Berat", "Bina Otot", "Kekal Sihat"])
         days = st.slider("Hari seminggu", 1, 7, 3)
         if st.button("Jana Rancangan", use_container_width=True):
             response = call_deepseek_r1(f"Hasilkan rancangan senaman untuk matlamat {goal} ({days} hari seminggu)")
             st.markdown(response)
-    
+
     elif feature == "🧘 Meditation":
         duration = st.slider("Durasi (minit)", 1, 30, 10)
         if st.button("Mula Meditasi", use_container_width=True):
             response = call_deepseek_r1(f"Panduan meditasi selama {duration} minit")
             st.markdown(response)
-    
+
     elif feature == "📚 Research":
         topic = st.text_input("Topik Penyelidikan")
         if st.button("Mulakan Penyelidikan", use_container_width=True) and topic:
             response = call_deepseek_r1(f"Buat literature review untuk topik: {topic}")
             st.markdown(response)
-    
+
     elif feature == "🎨 Comic":
         title = st.text_input("Tajuk Komik")
         if st.button("Hasilkan Komik", use_container_width=True) and title:
             response = call_deepseek_r1(f"Hasilkan komik bertajuk: {title}")
             st.markdown(response)
-    
+
     elif feature == "🎮 Game":
         game_type = st.selectbox("Jenis", ["Escape Room", "Murder Mystery", "Treasure Hunt", "Adventure"])
         if st.button("Mula Permainan", use_container_width=True):
             response = call_deepseek_r1(f"Cipta {game_type} yang menarik")
             st.markdown(response)
-    
+
     elif feature == "📊 Analytics":
         users = load_users()
         chats = load_chats()
@@ -753,7 +1078,7 @@ def feature_ui(feature):
             st.metric("Request", "1000/bulan")
         with col4:
             st.metric("Status", "✅ Aktif")
-    
+
     else:
         st.info("Ciri ini sedang dibangunkan.")
 
@@ -773,11 +1098,11 @@ def main():
         st.session_state.think_mode = False
     if "search_mode" not in st.session_state:
         st.session_state.search_mode = False
-    
+
     if not st.session_state.logged_in:
         login_ui()
         return
-    
+
     if st.session_state.current_tab == "Chat":
         chat_ui()
     else:
