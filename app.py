@@ -58,8 +58,9 @@ def get_requests_session():
         backoff_factor=0.5, 
         status_forcelist=[429, 500, 502, 503, 504]
     )
-    session.mount('https://', HTTPAdapter(max_retries=retries))
-    session.mount('http://', HTTPAdapter(max_retries=retries))
+    adapter = HTTPAdapter(max_retries=retries)
+    session.mount('https://', adapter)
+    session.mount('http://', adapter)
     return session
 
 requests_session = get_requests_session()
@@ -117,6 +118,22 @@ SESSION_TIMEOUT = 86400  # 24 jam
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 MAX_INPUT_LENGTH = 4000
+
+# === SAFE JSON ACCESS HELPER ===
+def safe_get(obj, path, default=None):
+    """Safely access nested dict/list structure"""
+    for p in path:
+        if isinstance(p, int):
+            if isinstance(obj, list) and len(obj) > p:
+                obj = obj[p]
+            else:
+                return default
+        else:
+            if isinstance(obj, dict) and p in obj:
+                obj = obj[p]
+            else:
+                return default
+    return obj
 
 # === ATOMIC WRITE - CROSS PLATFORM ===
 def atomic_write_file(filepath, data):
@@ -497,10 +514,10 @@ def call_groq(prompt):
         response = requests_session.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
             data = response.json()
-            try:
-                return data['choices'][0]['message']['content']
-            except (KeyError, IndexError):
-                return str(data)
+            content = safe_get(data, ['choices', 0, 'message', 'content'])
+            if content is not None:
+                return content
+            return str(data)
         logger.error(f"Groq API error: {response.status_code}")
         return f"Ralat Groq: {response.status_code}"
     except requests.exceptions.Timeout:
@@ -526,10 +543,10 @@ def call_deepseek_r1(prompt):
         response = requests_session.post(url, json=payload, headers=headers, timeout=90)
         if response.status_code == 200:
             data = response.json()
-            try:
-                return data['choices'][0]['message']['content']
-            except (KeyError, IndexError):
-                return str(data)
+            content = safe_get(data, ['choices', 0, 'message', 'content'])
+            if content is not None:
+                return content
+            return str(data)
         logger.error(f"DeepSeek API error: {response.status_code}")
         return f"Ralat DeepSeek: {response.status_code}"
     except Exception as e:
@@ -546,10 +563,10 @@ def call_gemini(prompt):
         response = requests_session.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
             data = response.json()
-            try:
-                return data['candidates'][0]['content']['parts'][0]['text']
-            except (KeyError, IndexError):
-                return str(data)
+            content = safe_get(data, ['candidates', 0, 'content', 'parts', 0, 'text'])
+            if content is not None:
+                return content
+            return str(data)
         logger.error(f"Gemini API error: {response.status_code}")
         return None
     except Exception as e:
@@ -574,10 +591,10 @@ def call_claude(prompt):
         response = requests_session.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
             data = response.json()
-            try:
-                return data['content'][0]['text']
-            except (KeyError, IndexError):
-                return str(data)
+            content = safe_get(data, ['content', 0, 'text'])
+            if content is not None:
+                return content
+            return str(data)
         logger.error(f"Claude API error: {response.status_code}")
         return None
     except Exception as e:
