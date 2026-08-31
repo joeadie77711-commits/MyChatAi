@@ -188,16 +188,14 @@ def verify_password(password, hashed):
     except:
         return False
 
-# === INPUT SANITIZATION ===
+# === INPUT SANITIZATION - TANPA html.escape (buang double-escaping) ===
 def sanitize_input(text, max_length=1000, allow_newlines=True):
-    """Sanitize user input to prevent XSS and injection"""
+    """Sanitize user input - remove HTML tags, redact sensitive words, limit length"""
     if text is None:
         return ""
     text = str(text)
     # Remove HTML tags
     text = re.sub(r'<[^>]+>', '', text)
-    # Escape special characters
-    text = html.escape(text)
     # Remove potential injection patterns - whole word only
     text = re.sub(r'(?i)\b(system|assistant|role|ignore|forget|previous|instruction)\b', '[REDACTED]', text)
     # Limit length
@@ -433,7 +431,7 @@ def register_user(username, password, email, name=""):
             "premium_until": None,
             "total_requests": 0,
             "email_verified": False,
-            "password_changed": True
+            "password_changed": False  # Baru: False supaya galak tukar password
         }
         save_users(users)
         logger.info(f"New user registered: '{username}' ({email})")
@@ -1200,7 +1198,7 @@ def chat_ui():
         """, unsafe_allow_html=True)
 
     for msg in st.session_state.messages:
-        # Escape content before displaying (XSS protection)
+        # Escape content before displaying (XSS protection) - ONLY ONCE
         safe_content = html.escape(msg["content"])
         if msg["role"] == "user":
             st.markdown(f'<div class="chat-bubble-user">{safe_content}</div>', unsafe_allow_html=True)
@@ -1237,7 +1235,9 @@ def chat_ui():
                 st.session_state.messages.append({"role": "user", "content": safe_input})
                 with st.spinner("Menghasilkan..."):
                     response = smart_ai(username, safe_input, st.session_state.think_mode, st.session_state.search_mode)
-                st.session_state.messages.append({"role": "ai", "content": response})
+                # Sanitize and truncate AI response before saving
+                safe_resp = sanitize_input(str(response), MAX_INPUT_LENGTH)
+                st.session_state.messages.append({"role": "ai", "content": safe_resp})
                 st.rerun()
 
     st.markdown("""
