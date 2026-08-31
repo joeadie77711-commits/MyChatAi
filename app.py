@@ -1294,30 +1294,6 @@ def chat_ui():
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("""
-    <script>
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            var input = document.querySelector('input[data-testid="stTextInput"]');
-            if (input && document.activeElement === input) {
-                e.preventDefault();
-                var btns = document.querySelectorAll('button');
-                for (var btn of btns) {
-                    if (btn.textContent.includes('Send') || btn.textContent.includes('➤')) {
-                        btn.click();
-                        setTimeout(function() {
-                            input.value = '';
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                        }, 100);
-                        break;
-                    }
-                }
-            }
-        }
-    });
-    </script>
-    """, unsafe_allow_html=True)
-
 # === FEATURE UI ===
 def feature_ui(feature):
     username = st.session_state.username
