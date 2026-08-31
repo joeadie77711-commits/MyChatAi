@@ -12,6 +12,7 @@ import traceback
 import html
 import bcrypt
 import threading
+import tempfile
 from io import BytesIO
 from PIL import Image
 import base64
@@ -93,34 +94,36 @@ MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 MAX_INPUT_LENGTH = 4000
 
-# === FILE LOCKING - THREAD SAFE DENGAN FCNTL FALLBACK ===
+# === ATOMIC WRITE - CROSS PLATFORM ===
+def atomic_write_file(filepath, data):
+    """Atomic write using temp file and rename"""
+    dirname = os.path.dirname(filepath) or "."
+    try:
+        fd, temppath = tempfile.mkstemp(dir=dirname, suffix='.tmp')
+        with os.fdopen(fd, 'w') as f:
+            if HAVE_FCNTL and fcntl:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            json.dump(data, f, indent=2)
+            if HAVE_FCNTL and fcntl:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        os.replace(temppath, filepath)
+        return True
+    except Exception as e:
+        logger.error(f"Atomic write error: {traceback.format_exc()}")
+        return False
+
+# === FILE LOCKING - THREAD SAFE DENGAN ATOMIC WRITE ===
 class DataManager:
     def __init__(self):
         self.lock = threading.RLock()
     
-    def _write_file_atomic(self, filename, data):
-        """Atomic write using temp file and rename"""
-        temp_file = filename + ".tmp"
-        try:
-            with open(temp_file, "w") as f:
-                if HAVE_FCNTL and fcntl:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                json.dump(data, f, indent=2)
-                if HAVE_FCNTL and fcntl:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            os.replace(temp_file, filename)
-            return True
-        except Exception as e:
-            logger.error(f"Atomic write error: {traceback.format_exc()}")
-            return False
-    
     def save_users(self, data):
         with self.lock:
-            self._write_file_atomic(USER_DATA_FILE, data)
+            atomic_write_file(USER_DATA_FILE, data)
     
     def save_chats(self, data):
         with self.lock:
-            self._write_file_atomic(CHAT_HISTORY_FILE, data)
+            atomic_write_file(CHAT_HISTORY_FILE, data)
     
     def save_usage(self, username, data):
         with self.lock:
@@ -134,7 +137,7 @@ class DataManager:
                         if HAVE_FCNTL and fcntl:
                             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 all_data[username] = data
-                self._write_file_atomic(USAGE_FILE, all_data)
+                atomic_write_file(USAGE_FILE, all_data)
             except Exception as e:
                 logger.error(f"Error saving usage: {traceback.format_exc()}")
 
@@ -459,8 +462,12 @@ def call_groq(prompt):
         payload = {"model": "llama-3.1-70b-versatile", "messages": [{"role": "user", "content": prompt}], "temperature": 0.7, "max_tokens": 2048}
         response = requests.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
-            return response.json()['choices'][0]['message']['content']
-        logger.error(f"Groq API error: {response.status_code} - {response.text}")
+            data = response.json()
+            try:
+                return data['choices'][0]['message']['content']
+            except (KeyError, IndexError):
+                return str(data)
+        logger.error(f"Groq API error: {response.status_code}")
         return f"Ralat Groq: {response.status_code}"
     except requests.exceptions.Timeout:
         logger.error("Groq timeout")
@@ -484,7 +491,11 @@ def call_deepseek_r1(prompt):
         payload = {"model": "deepseek/deepseek-r1", "messages": [{"role": "user", "content": prompt}], "temperature": 0.7, "max_tokens": 4096}
         response = requests.post(url, json=payload, headers=headers, timeout=90)
         if response.status_code == 200:
-            return response.json()['choices'][0]['message']['content']
+            data = response.json()
+            try:
+                return data['choices'][0]['message']['content']
+            except (KeyError, IndexError):
+                return str(data)
         logger.error(f"DeepSeek API error: {response.status_code}")
         return f"Ralat DeepSeek: {response.status_code}"
     except Exception as e:
@@ -501,7 +512,10 @@ def call_gemini(prompt):
         response = requests.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
             data = response.json()
-            return data['candidates'][0]['content']['parts'][0]['text']
+            try:
+                return data['candidates'][0]['content']['parts'][0]['text']
+            except (KeyError, IndexError):
+                return str(data)
         logger.error(f"Gemini API error: {response.status_code}")
         return None
     except Exception as e:
@@ -525,7 +539,11 @@ def call_claude(prompt):
         }
         response = requests.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
-            return response.json()['content'][0]['text']
+            data = response.json()
+            try:
+                return data['content'][0]['text']
+            except (KeyError, IndexError):
+                return str(data)
         logger.error(f"Claude API error: {response.status_code}")
         return None
     except Exception as e:
@@ -543,7 +561,9 @@ def call_huggingface(prompt):
         if response.status_code == 200:
             result = response.json()
             if isinstance(result, list) and len(result) > 0:
-                return result[0].get('generated_text', str(result[0]))
+                if isinstance(result[0], dict):
+                    return result[0].get('generated_text', str(result[0]))
+                return str(result[0])
             return str(result)
         return None
     except Exception as e:
@@ -567,12 +587,12 @@ def call_replicate(prompt):
                 status_response = requests.get(f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers)
                 if status_response.status_code == 200:
                     status_data = status_response.json()
-                    if status_data['status'] == 'succeeded':
+                    if status_data.get('status') == 'succeeded':
                         output = status_data.get('output')
                         if isinstance(output, str):
                             return output
-                        return str(output) if output else None
-                    elif status_data['status'] == 'failed':
+                        return str(output) if output is not None else None
+                    elif status_data.get('status') == 'failed':
                         return None
                 time.sleep(1)
             return None
