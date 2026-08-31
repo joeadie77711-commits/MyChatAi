@@ -45,44 +45,48 @@ st.set_page_config(
 )
 
 # === API KEYS DARI STREAMLIT SECRETS ===
-try:
-    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-    OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-    CLAUDE_API_KEY = st.secrets.get("CLAUDE_API_KEY", "")
-    HUGGINGFACE_API_KEY = st.secrets.get("HUGGINGFACE_API_KEY", "")
-    REPLICATE_API_KEY = st.secrets.get("REPLICATE_API_KEY", "")
-    STABILITY_API_KEY = st.secrets.get("STABILITY_API_KEY", "")
-    UNSPLASH_API_KEY = st.secrets.get("UNSPLASH_API_KEY", "")
-    POLLINATIONS_API_KEY = st.secrets.get("POLLINATIONS_API_KEY", "")
-    ELEVENLABS_API_KEY = st.secrets.get("ELEVENLABS_API_KEY", "")
-    WEATHER_API_KEY = st.secrets.get("WEATHER_API_KEY", "")
-    NEWS_API_KEY = st.secrets.get("NEWS_API_KEY", "")
-    SEARCH_API_KEY = st.secrets.get("SEARCH_API_KEY", "")
-    CRAZYROUTER_API_KEY = st.secrets.get("CRAZYROUTER_API_KEY", "")
-    
-    # === WAJIB - TIADA DEFAULT ===
-    ADMIN_EMAIL = st.secrets.get("ADMIN_EMAIL")
-    ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD")
-    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
-        logger.error("ADMIN_EMAIL or ADMIN_PASSWORD missing in st.secrets")
-        st.error("❌ Admin credentials not configured. Sila setup secrets.")
-        st.stop()
-    
-    # Cast MAX_FREE_REQUESTS ke int
-    try:
-        MAX_FREE_REQUESTS = int(st.secrets.get("MAX_FREE_REQUESTS", 1000))
-    except (TypeError, ValueError):
-        MAX_FREE_REQUESTS = 1000
-    
-    DISCORD_WEBHOOK = st.secrets.get("DISCORD_WEBHOOK", "")
-    TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
-    TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
-        
-except KeyError as e:
-    st.error(f"Missing required secret: {e}")
-    logger.error(f"Missing secret: {e}")
+# Gunakan .get() untuk semua untuk elakkan KeyError
+GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
+OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY", "")
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+CLAUDE_API_KEY = st.secrets.get("CLAUDE_API_KEY", "")
+HUGGINGFACE_API_KEY = st.secrets.get("HUGGINGFACE_API_KEY", "")
+REPLICATE_API_KEY = st.secrets.get("REPLICATE_API_KEY", "")
+STABILITY_API_KEY = st.secrets.get("STABILITY_API_KEY", "")
+UNSPLASH_API_KEY = st.secrets.get("UNSPLASH_API_KEY", "")
+POLLINATIONS_API_KEY = st.secrets.get("POLLINATIONS_API_KEY", "")
+ELEVENLABS_API_KEY = st.secrets.get("ELEVENLABS_API_KEY", "")
+WEATHER_API_KEY = st.secrets.get("WEATHER_API_KEY", "")
+NEWS_API_KEY = st.secrets.get("NEWS_API_KEY", "")
+SEARCH_API_KEY = st.secrets.get("SEARCH_API_KEY", "")
+CRAZYROUTER_API_KEY = st.secrets.get("CRAZYROUTER_API_KEY", "")
+
+# === SEMAK KUNCI WAJIB ===
+required_keys = ["GROQ_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY"]
+missing_keys = [key for key in required_keys if not st.secrets.get(key)]
+if missing_keys:
+    error_msg = f"Missing required secrets: {', '.join(missing_keys)}"
+    st.error(f"❌ {error_msg}")
+    logger.error(error_msg)
     st.stop()
+
+# === WAJIB - TIADA DEFAULT ===
+ADMIN_EMAIL = st.secrets.get("ADMIN_EMAIL")
+ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD")
+if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+    logger.error("ADMIN_EMAIL or ADMIN_PASSWORD missing in st.secrets")
+    st.error("❌ Admin credentials not configured. Sila setup secrets.")
+    st.stop()
+
+# Cast MAX_FREE_REQUESTS ke int
+try:
+    MAX_FREE_REQUESTS = int(st.secrets.get("MAX_FREE_REQUESTS", 1000))
+except (TypeError, ValueError):
+    MAX_FREE_REQUESTS = 1000
+
+DISCORD_WEBHOOK = st.secrets.get("DISCORD_WEBHOOK", "")
+TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 
 # === CONSTANTS ===
 USER_DATA_FILE = "mychat_users.json"
@@ -100,10 +104,10 @@ def atomic_write_file(filepath, data):
     dirname = os.path.dirname(filepath) or "."
     try:
         fd, temppath = tempfile.mkstemp(dir=dirname, suffix='.tmp')
-        with os.fdopen(fd, 'w') as f:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
             if HAVE_FCNTL and fcntl:
                 fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            json.dump(data, f, indent=2)
+            json.dump(data, f, indent=2, ensure_ascii=False)
             if HAVE_FCNTL and fcntl:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         os.replace(temppath, filepath)
@@ -130,7 +134,7 @@ class DataManager:
             all_data = {}
             try:
                 if os.path.exists(USAGE_FILE):
-                    with open(USAGE_FILE, "r") as f:
+                    with open(USAGE_FILE, "r", encoding='utf-8') as f:
                         if HAVE_FCNTL and fcntl:
                             fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                         all_data = json.load(f)
@@ -236,7 +240,7 @@ def validate_password_strength(password):
 def load_users():
     if os.path.exists(USER_DATA_FILE):
         try:
-            with open(USER_DATA_FILE, "r") as f:
+            with open(USER_DATA_FILE, "r", encoding='utf-8') as f:
                 if HAVE_FCNTL and fcntl:
                     fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                 data = json.load(f)
@@ -246,6 +250,11 @@ def load_users():
         except Exception as e:
             logger.error(f"Error loading users: {traceback.format_exc()}")
             return {}
+    
+    # Only create default admin if credentials exist
+    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        logger.error("Cannot create default admin: ADMIN_EMAIL or ADMIN_PASSWORD missing")
+        return {}
     
     default = {
         "admin": {
@@ -271,14 +280,15 @@ def save_users(data):
 def load_chats():
     if os.path.exists(CHAT_HISTORY_FILE):
         try:
-            with open(CHAT_HISTORY_FILE, "r") as f:
+            with open(CHAT_HISTORY_FILE, "r", encoding='utf-8') as f:
                 if HAVE_FCNTL and fcntl:
                     fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                 data = json.load(f)
                 if HAVE_FCNTL and fcntl:
                     fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 return data
-        except:
+        except Exception as e:
+            logger.error(f"Error loading chats: {traceback.format_exc()}")
             return {}
     return {}
 
@@ -288,14 +298,15 @@ def save_chats(data):
 def load_usage(username):
     if os.path.exists(USAGE_FILE):
         try:
-            with open(USAGE_FILE, "r") as f:
+            with open(USAGE_FILE, "r", encoding='utf-8') as f:
                 if HAVE_FCNTL and fcntl:
                     fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                 data = json.load(f)
                 if HAVE_FCNTL and fcntl:
                     fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             return data.get(username, {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year})
-        except:
+        except Exception as e:
+            logger.error(f"Error loading usage: {traceback.format_exc()}")
             pass
     return {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year}
 
@@ -1040,7 +1051,7 @@ def settings_modal():
         st.markdown("### Settings")
 
         lang = st.selectbox("🌐 Bahasa", ["Malay", "English", "Chinese"], index=0)
-        dark_mode = st.toggle("Dark Mode", value=True)
+        dark_mode = st.checkbox("Dark Mode", value=True)  # Ganti st.toggle dengan st.checkbox
 
         st.markdown("#### Tukar Password")
         old_pass = st.text_input("Password Lama", type="password", key="old_pass")
@@ -1128,7 +1139,10 @@ def chat_ui():
                 history = load_chats()
                 if username not in history:
                     history[username] = []
-                chat_title = st.session_state.messages[0]["content"][:50] if st.session_state.messages else "New Chat"
+                # Extract plain text for title (avoid HTML entities)
+                first_msg = st.session_state.messages[0]["content"]
+                # Remove HTML tags for title
+                chat_title = re.sub(r'<[^>]+>', '', first_msg)[:50] if first_msg else "New Chat"
                 history[username].append({
                     "title": chat_title,
                     "messages": st.session_state.messages,
@@ -1159,9 +1173,6 @@ def chat_ui():
         history = load_chats().get(username, [])
         if search_query:
             history = [h for h in history if search_query.lower() in h.get("title", "").lower()]
-
-        today = datetime.datetime.now().date()
-        this_week = today - datetime.timedelta(days=7)
 
         for chat in reversed(history[-50:]):
             chat_time = datetime.datetime.fromisoformat(chat.get("time", datetime.datetime.now().isoformat()))
