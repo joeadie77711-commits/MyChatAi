@@ -417,7 +417,7 @@ def register_user(username, password, email, name=""):
         if username in users:
             return {"success": False, "error": "Username sudah wujud"}
         
-        if any(u.get("email") == email for u in users.values()):
+        if any(u.get("email").lower() == email.lower() for u in users.values()):
             return {"success": False, "error": "Email sudah didaftarkan"}
         
         users[username] = {
@@ -431,7 +431,7 @@ def register_user(username, password, email, name=""):
             "premium_until": None,
             "total_requests": 0,
             "email_verified": False,
-            "password_changed": False
+            "password_changed": False  # Galak tukar password pada login pertama
         }
         save_users(users)
         logger.info(f"New user registered: '{username}' ({email})")
