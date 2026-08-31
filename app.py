@@ -19,7 +19,6 @@ from urllib.parse import quote
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import logging.handlers
-import concurrent.futures
 
 # === LOGGING SETUP WITH ROTATING FILE ===
 logger = logging.getLogger(__name__)
@@ -48,16 +47,14 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# === THREAD POOL FOR BACKGROUND TASKS ===
-executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-
 # === REQUESTS SESSION WITH RETRIES ===
 def get_requests_session():
     session = requests.Session()
     retries = Retry(
         total=3, 
         backoff_factor=0.5, 
-        status_forcelist=[429, 500, 502, 503, 504]
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET", "POST"]
     )
     adapter = HTTPAdapter(max_retries=retries)
     session.mount('https://', adapter)
@@ -67,6 +64,7 @@ def get_requests_session():
 requests_session = get_requests_session()
 
 # === API KEYS DARI STREAMLIT SECRETS ===
+# Gunakan .get() untuk semua
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY", "")
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
@@ -136,7 +134,7 @@ def safe_get(obj, path, default=None):
 
 # === ATOMIC WRITE - CROSS PLATFORM ===
 def atomic_write_file(filepath, data):
-    """Atomic write using temp file and rename"""
+    """Atomic write using temp file and rename (utf-8, safe, set permissions)"""
     dirname = os.path.dirname(filepath) or "."
     try:
         fd, temppath = tempfile.mkstemp(dir=dirname, suffix='.tmp')
@@ -236,7 +234,6 @@ def sanitize_input(text, max_length=1000, allow_newlines=True):
         return ""
     text = str(text)
     text = re.sub(r'<[^>]+>', '', text)
-    # Redact only dangerous phrases, not individual words
     text = re.sub(r'(?i)\b(ignore previous instructions|forget previous instructions|system prompt override)\b', '[REDACTED]', text)
     if len(text) > max_length:
         text = text[:max_length] + "... (truncated)"
@@ -490,7 +487,7 @@ def update_user(username, data):
         return True
     return False
 
-# === AI FUNCTIONS ===
+# === AI FUNCTIONS - STANDARDIZED RETURNS ===
 def call_groq(prompt):
     try:
         url = "https://api.groq.com/openai/v1/chat/completions"
@@ -504,16 +501,16 @@ def call_groq(prompt):
                 return {"ok": True, "text": content}
             return {"ok": False, "error": "Invalid response format"}
         logger.error(f"Groq API error: {response.status_code}")
-        return {"ok": False, "error": f"Ralat Groq: {response.status_code}"}
+        return {"ok": False, "error": f"Groq API error: {response.status_code}"}
     except requests.exceptions.Timeout:
         logger.error("Groq timeout")
-        return {"ok": False, "error": "Ralat: Timeout - Sila cuba lagi"}
+        return {"ok": False, "error": "Timeout - Sila cuba lagi"}
     except requests.exceptions.RequestException as e:
         logger.error(f"Groq request error: {str(e)}")
-        return {"ok": False, "error": f"Ralat: {str(e)}"}
+        return {"ok": False, "error": str(e)}
     except Exception as e:
         logger.error(f"Groq error: {traceback.format_exc()}")
-        return {"ok": False, "error": f"Ralat: {str(e)}"}
+        return {"ok": False, "error": str(e)}
 
 def call_deepseek_r1(prompt):
     try:
@@ -533,10 +530,10 @@ def call_deepseek_r1(prompt):
                 return {"ok": True, "text": content}
             return {"ok": False, "error": "Invalid response format"}
         logger.error(f"DeepSeek API error: {response.status_code}")
-        return {"ok": False, "error": f"Ralat DeepSeek: {response.status_code}"}
+        return {"ok": False, "error": f"DeepSeek API error: {response.status_code}"}
     except Exception as e:
         logger.error(f"DeepSeek error: {traceback.format_exc()}")
-        return {"ok": False, "error": f"Ralat: {str(e)}"}
+        return {"ok": False, "error": str(e)}
 
 def call_gemini(prompt):
     if not GEMINI_API_KEY:
@@ -553,10 +550,10 @@ def call_gemini(prompt):
                 return {"ok": True, "text": content}
             return {"ok": False, "error": "Invalid response format"}
         logger.error(f"Gemini API error: {response.status_code}")
-        return {"ok": False, "error": f"Gemini error: {response.status_code}"}
+        return {"ok": False, "error": f"Gemini API error: {response.status_code}"}
     except Exception as e:
         logger.error(f"Gemini error: {traceback.format_exc()}")
-        return {"ok": False, "error": f"Ralat: {str(e)}"}
+        return {"ok": False, "error": str(e)}
 
 def call_claude(prompt):
     if not CLAUDE_API_KEY:
@@ -581,10 +578,10 @@ def call_claude(prompt):
                 return {"ok": True, "text": content}
             return {"ok": False, "error": "Invalid response format"}
         logger.error(f"Claude API error: {response.status_code}")
-        return {"ok": False, "error": f"Claude error: {response.status_code}"}
+        return {"ok": False, "error": f"Claude API error: {response.status_code}"}
     except Exception as e:
         logger.error(f"Claude error: {traceback.format_exc()}")
-        return {"ok": False, "error": f"Ralat: {str(e)}"}
+        return {"ok": False, "error": str(e)}
 
 def call_huggingface(prompt):
     if not HUGGINGFACE_API_KEY:
@@ -602,10 +599,10 @@ def call_huggingface(prompt):
                     return {"ok": True, "text": text}
                 return {"ok": True, "text": str(result[0])}
             return {"ok": True, "text": str(result)}
-        return {"ok": False, "error": f"HuggingFace error: {response.status_code}"}
+        return {"ok": False, "error": f"HuggingFace API error: {response.status_code}"}
     except Exception as e:
         logger.error(f"HuggingFace error: {traceback.format_exc()}")
-        return {"ok": False, "error": f"Ralat: {str(e)}"}
+        return {"ok": False, "error": str(e)}
 
 def call_replicate(prompt):
     if not REPLICATE_API_KEY:
@@ -623,7 +620,7 @@ def call_replicate(prompt):
             prediction_id = safe_get(resp_json, ['id'])
             if not prediction_id:
                 logger.error(f"Replicate response missing id: {resp_json}")
-                return {"ok": False, "error": "Invalid response from Replicate"}
+                return {"ok": False, "error": "Invalid Replicate response"}
             start_time = time.time()
             for i in range(30):
                 try:
@@ -647,16 +644,16 @@ def call_replicate(prompt):
                 
                 elapsed = time.time() - start_time
                 if elapsed > 60:
-                    logger.error(f"Replicate prediction timeout after 60s")
+                    logger.error(f"Replicate prediction timeout")
                     return {"ok": False, "error": "Replicate prediction timeout"}
                 sleep_time = min(0.5 * (2 ** i), 5)
                 time.sleep(sleep_time)
             return {"ok": False, "error": "Replicate prediction timeout"}
         logger.error(f"Replicate API error: {response.status_code}")
-        return {"ok": False, "error": f"Replicate error: {response.status_code}"}
+        return {"ok": False, "error": f"Replicate API error: {response.status_code}"}
     except Exception as e:
         logger.error(f"Replicate error: {traceback.format_exc()}")
-        return {"ok": False, "error": f"Ralat: {str(e)}"}
+        return {"ok": False, "error": str(e)}
 
 # === SMART AI DENGAN AUTO-FALLBACK ===
 def smart_ai_with_fallback(prompt):
@@ -1065,7 +1062,7 @@ def settings_modal():
         st.markdown("### Settings")
 
         lang = st.selectbox("🌐 Bahasa", ["Malay", "English", "Chinese"], index=0)
-        dark_mode = st.checkbox("Dark Mode", value=True)
+        dark_mode = st.checkbox("Dark Mode", value=True)  # Fixed: using checkbox instead of toggle
 
         st.markdown("#### Tukar Password")
         old_pass = st.text_input("Password Lama", type="password", key="old_pass")
@@ -1293,11 +1290,11 @@ def feature_ui(feature):
             topik = st.text_input("Topik")
             tempoh = st.selectbox("Tempoh", ["30 minit", "60 minit"])
         if st.button("Jana RPH", use_container_width=True) and topik:
-            rph = call_deepseek_r1(f"Sediakan RPH {subjek} Tahun {tahun}, topik {topik}, tempoh {tempoh}")
-            if rph.get("ok"):
-                st.markdown(rph["text"])
+            result = call_deepseek_r1(f"Sediakan RPH {subjek} Tahun {tahun}, topik {topik}, tempoh {tempoh}")
+            if result.get("ok"):
+                st.markdown(result["text"])
             else:
-                st.error(rph.get("error", "Gagal menjana RPH"))
+                st.error(result.get("error", "Gagal menjana RPH"))
 
     elif feature == "Art":
         prompt = st.text_input("Huraikan gambar")
@@ -1422,57 +1419,57 @@ def feature_ui(feature):
         - Pitch Deck
         """)
         if st.button("Jana Business Plan", use_container_width=True):
-            response = call_deepseek_r1("Hasilkan business plan untuk startup teknologi")
-            if response.get("ok"):
-                st.markdown(response["text"])
+            result = call_deepseek_r1("Hasilkan business plan untuk startup teknologi")
+            if result.get("ok"):
+                st.markdown(result["text"])
             else:
-                st.error(response.get("error", "Gagal menjana business plan"))
+                st.error(result.get("error", "Gagal menjana business plan"))
 
     elif feature == "Fitness":
         goal = st.selectbox("Matlamat", ["Turun Berat", "Bina Otot", "Kekal Sihat"])
         days = st.slider("Hari seminggu", 1, 7, 3)
         if st.button("Jana Rancangan", use_container_width=True):
-            response = call_deepseek_r1(f"Hasilkan rancangan senaman untuk matlamat {goal} ({days} hari seminggu)")
-            if response.get("ok"):
-                st.markdown(response["text"])
+            result = call_deepseek_r1(f"Hasilkan rancangan senaman untuk matlamat {goal} ({days} hari seminggu)")
+            if result.get("ok"):
+                st.markdown(result["text"])
             else:
-                st.error(response.get("error", "Gagal menjana rancangan"))
+                st.error(result.get("error", "Gagal menjana rancangan"))
 
     elif feature == "Meditation":
         duration = st.slider("Durasi (minit)", 1, 30, 10)
         if st.button("Mula Meditasi", use_container_width=True):
-            response = call_deepseek_r1(f"Panduan meditasi selama {duration} minit")
-            if response.get("ok"):
-                st.markdown(response["text"])
+            result = call_deepseek_r1(f"Panduan meditasi selama {duration} minit")
+            if result.get("ok"):
+                st.markdown(result["text"])
             else:
-                st.error(response.get("error", "Gagal menjana panduan meditasi"))
+                st.error(result.get("error", "Gagal menjana panduan meditasi"))
 
     elif feature == "Research":
         topic = st.text_input("Topik Penyelidikan")
         if st.button("Mulakan Penyelidikan", use_container_width=True) and topic:
-            response = call_deepseek_r1(f"Buat literature review untuk topik: {topic}")
-            if response.get("ok"):
-                st.markdown(response["text"])
+            result = call_deepseek_r1(f"Buat literature review untuk topik: {topic}")
+            if result.get("ok"):
+                st.markdown(result["text"])
             else:
-                st.error(response.get("error", "Gagal menjana literature review"))
+                st.error(result.get("error", "Gagal menjana literature review"))
 
     elif feature == "Comic":
         title = st.text_input("Tajuk Komik")
         if st.button("Hasilkan Komik", use_container_width=True) and title:
-            response = call_deepseek_r1(f"Hasilkan komik bertajuk: {title}")
-            if response.get("ok"):
-                st.markdown(response["text"])
+            result = call_deepseek_r1(f"Hasilkan komik bertajuk: {title}")
+            if result.get("ok"):
+                st.markdown(result["text"])
             else:
-                st.error(response.get("error", "Gagal menjana komik"))
+                st.error(result.get("error", "Gagal menjana komik"))
 
     elif feature == "Game":
         game_type = st.selectbox("Jenis", ["Escape Room", "Murder Mystery", "Treasure Hunt", "Adventure"])
         if st.button("Mula Permainan", use_container_width=True):
-            response = call_deepseek_r1(f"Cipta {game_type} yang menarik")
-            if response.get("ok"):
-                st.markdown(response["text"])
+            result = call_deepseek_r1(f"Cipta {game_type} yang menarik")
+            if result.get("ok"):
+                st.markdown(result["text"])
             else:
-                st.error(response.get("error", "Gagal menjana permainan"))
+                st.error(result.get("error", "Gagal menjana permainan"))
 
     elif feature == "Analytics":
         users = load_users()
