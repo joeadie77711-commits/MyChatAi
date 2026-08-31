@@ -1,4 +1,4 @@
-# mychat_ultimate_pro_v42.0.py
+# mychat_ultimate_pro_v44.0.py
 import streamlit as st
 import datetime
 import json
@@ -7,10 +7,26 @@ import requests
 import hashlib
 import re
 import time
+import logging
+import traceback
+import html
+import bcrypt
+import fcntl
+import threading
 from io import BytesIO
 from PIL import Image
 import base64
 import random
+from collections import defaultdict
+from urllib.parse import quote
+
+# === LOGGING SETUP ===
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename='mychat_app.log'
+)
+logger = logging.getLogger(__name__)
 
 # === PAGE CONFIG ===
 st.set_page_config(
@@ -36,13 +52,26 @@ try:
     NEWS_API_KEY = st.secrets.get("NEWS_API_KEY", "")
     SEARCH_API_KEY = st.secrets.get("SEARCH_API_KEY", "")
     CRAZYROUTER_API_KEY = st.secrets.get("CRAZYROUTER_API_KEY", "")
-    ADMIN_EMAIL = st.secrets.get("ADMIN_EMAIL", "joe.adie77711@gmail.com")
+    ADMIN_EMAIL = st.secrets.get("ADMIN_EMAIL")
+    ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD")
     MAX_FREE_REQUESTS = st.secrets.get("MAX_FREE_REQUESTS", 1000)
     DISCORD_WEBHOOK = st.secrets.get("DISCORD_WEBHOOK", "")
     TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
+    
+    # Validation
+    if not ADMIN_EMAIL:
+        raise ValueError("ADMIN_EMAIL not set in secrets!")
+    if not ADMIN_PASSWORD:
+        raise ValueError("ADMIN_PASSWORD not set in secrets!")
+        
 except KeyError as e:
     st.error(f"Missing required secret: {e}")
+    logger.error(f"Missing secret: {e}")
+    st.stop()
+except ValueError as e:
+    st.error(f"Configuration error: {e}")
+    logger.error(f"Config error: {e}")
     st.stop()
 
 # === CONSTANTS ===
@@ -50,19 +79,165 @@ USER_DATA_FILE = "mychat_users.json"
 CHAT_HISTORY_FILE = "mychat_chats.json"
 USAGE_FILE = "mychat_usage.json"
 DEFAULT_AVATAR = "https://ui-avatars.com/api/?name=User&background=4d6bfe&color=fff&size=40"
+SESSION_TIMEOUT = 86400  # 24 jam
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+MAX_INPUT_LENGTH = 4000
 
-# === HASH ===
+# === FILE LOCKING - THREAD SAFE ===
+class DataManager:
+    def __init__(self):
+        self.lock = threading.RLock()
+    
+    def save_users(self, data):
+        with self.lock:
+            try:
+                with open(USER_DATA_FILE, "w") as f:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # Lock file
+                    json.dump(data, f, indent=2)
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # Unlock
+            except Exception as e:
+                logger.error(f"Error saving users: {traceback.format_exc()}")
+                st.error("Gagal menyimpan data pengguna")
+    
+    def save_chats(self, data):
+        with self.lock:
+            try:
+                with open(CHAT_HISTORY_FILE, "w") as f:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    json.dump(data, f, indent=2)
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            except Exception as e:
+                logger.error(f"Error saving chats: {traceback.format_exc()}")
+    
+    def save_usage(self, username, data):
+        with self.lock:
+            all_data = {}
+            try:
+                if os.path.exists(USAGE_FILE):
+                    with open(USAGE_FILE, "r") as f:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                        all_data = json.load(f)
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                all_data[username] = data
+                with open(USAGE_FILE, "w") as f:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    json.dump(all_data, f, indent=2)
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            except Exception as e:
+                logger.error(f"Error saving usage: {traceback.format_exc()}")
+
+data_manager = DataManager()
+
+# === LOGIN ATTEMPT TRACKING ===
+class LoginAttemptTracker:
+    def __init__(self):
+        self.attempts = {}  # {username: [(timestamp, success), ...]}
+    
+    def add_attempt(self, username, success):
+        now = datetime.datetime.now()
+        if username not in self.attempts:
+            self.attempts[username] = []
+        self.attempts[username].append((now, success))
+        # Clean old entries (older than 1 hour)
+        self.attempts[username] = [(ts, s) for ts, s in self.attempts[username] 
+                                   if (now - ts).total_seconds() < 3600]
+    
+    def is_locked(self, username):
+        now = datetime.datetime.now()
+        if username not in self.attempts:
+            return False
+        failed = sum(1 for ts, success in self.attempts[username] 
+                     if not success and (now - ts).total_seconds() < (LOCKOUT_MINUTES * 60))
+        return failed >= MAX_LOGIN_ATTEMPTS
+    
+    def get_remaining_attempts(self, username):
+        if username not in self.attempts:
+            return MAX_LOGIN_ATTEMPTS
+        now = datetime.datetime.now()
+        failed = sum(1 for ts, success in self.attempts[username] 
+                     if not success and (now - ts).total_seconds() < (LOCKOUT_MINUTES * 60))
+        return max(0, MAX_LOGIN_ATTEMPTS - failed)
+
+login_tracker = LoginAttemptTracker()
+
+# === HASH - GUNA BCRYPT ===
 def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Hash password using bcrypt with salt"""
+    salt = bcrypt.gensalt(rounds=12)
+    return bcrypt.hashpw(password.encode(), salt).decode()
+
+def verify_password(password, hashed):
+    """Verify password against bcrypt hash"""
+    try:
+        return bcrypt.checkpw(password.encode(), hashed.encode())
+    except:
+        return False
+
+# === INPUT SANITIZATION ===
+def sanitize_input(text, max_length=1000, allow_newlines=True):
+    """Sanitize user input to prevent XSS and injection"""
+    if text is None:
+        return ""
+    text = str(text)
+    # Remove HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+    # Escape special characters
+    text = html.escape(text)
+    # Remove potential injection patterns
+    text = re.sub(r'(?i)(system|assistant|role|ignore|forget|previous|instruction)', '[REDACTED]', text)
+    # Limit length
+    if len(text) > max_length:
+        text = text[:max_length] + "... (truncated)"
+    return text.strip()
+
+def sanitize_prompt(prompt):
+    """Sanitize prompt for AI"""
+    prompt = sanitize_input(prompt, MAX_INPUT_LENGTH)
+    # Additional prompt injection protection
+    prompt = re.sub(r'(?i)(you are|you are now|system prompt|developer mode)', '[REDACTED]', prompt)
+    return prompt
+
+def validate_email(email):
+    """Validate email format"""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+
+def validate_username(username):
+    """Validate username format"""
+    return re.match(r'^[a-zA-Z0-9_]{3,30}$', username) is not None
+
+def validate_password_strength(password):
+    """Check password strength"""
+    if len(password) < 8:
+        return False, "Password mesti sekurang-kurangnya 8 aksara"
+    if not re.search(r'[A-Z]', password):
+        return False, "Password perlu ada huruf besar"
+    if not re.search(r'[a-z]', password):
+        return False, "Password perlu ada huruf kecil"
+    if not re.search(r'[0-9]', password):
+        return False, "Password perlu ada nombor"
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        return False, "Password perlu ada aksara khas"
+    return True, "Password kuat"
 
 # === DATA FUNCTIONS ===
 def load_users():
     if os.path.exists(USER_DATA_FILE):
-        with open(USER_DATA_FILE, "r") as f:
-            return json.load(f)
+        try:
+            with open(USER_DATA_FILE, "r") as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                data = json.load(f)
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                return data
+        except Exception as e:
+            logger.error(f"Error loading users: {traceback.format_exc()}")
+            return {}
+    
+    # Create default admin with bcrypt password
     default = {
         "admin": {
-            "password": hash_password("777777"),
+            "password": hash_password(ADMIN_PASSWORD),
             "role": "admin",
             "email": ADMIN_EMAIL,
             "name": "Admin",
@@ -70,41 +245,46 @@ def load_users():
             "settings": {"language": "Malay", "dark_mode": True},
             "created_at": datetime.datetime.now().isoformat(),
             "premium_until": None,
-            "total_requests": 0
+            "total_requests": 0,
+            "email_verified": True,
+            "password_changed": False
         }
     }
-    save_users(default)
+    data_manager.save_users(default)
     return default
 
 def save_users(data):
-    with open(USER_DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    data_manager.save_users(data)
 
 def load_chats():
     if os.path.exists(CHAT_HISTORY_FILE):
-        with open(CHAT_HISTORY_FILE, "r") as f:
-            return json.load(f)
+        try:
+            with open(CHAT_HISTORY_FILE, "r") as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                data = json.load(f)
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                return data
+        except:
+            return {}
     return {}
 
 def save_chats(data):
-    with open(CHAT_HISTORY_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    data_manager.save_chats(data)
 
 def load_usage(username):
     if os.path.exists(USAGE_FILE):
-        with open(USAGE_FILE, "r") as f:
-            data = json.load(f)
-        return data.get(username, {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year})
+        try:
+            with open(USAGE_FILE, "r") as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                data = json.load(f)
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            return data.get(username, {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year})
+        except:
+            pass
     return {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year}
 
 def save_usage(username, data):
-    all_data = {}
-    if os.path.exists(USAGE_FILE):
-        with open(USAGE_FILE, "r") as f:
-            all_data = json.load(f)
-    all_data[username] = data
-    with open(USAGE_FILE, "w") as f:
-        json.dump(all_data, f, indent=2)
+    data_manager.save_usage(username, data)
 
 def check_usage_limit(username):
     user_data = load_users().get(username, {})
@@ -157,34 +337,97 @@ def is_premium(username):
             return False
     return False
 
+# === RATE LIMITING ===
+rate_limits = defaultdict(list)
+
+def check_rate_limit(username, limit=30, window=60):
+    """30 requests per minute"""
+    now = time.time()
+    rate_limits[username] = [t for t in rate_limits[username] if t > now - window]
+    if len(rate_limits[username]) >= limit:
+        return False
+    rate_limits[username].append(now)
+    return True
+
 # === AUTH FUNCTIONS ===
 def login_user(username, password):
-    users = load_users()
-    if username not in users:
-        return {"success": False, "error": "Username tidak wujud"}
-    if users[username]["password"] != hash_password(password):
-        return {"success": False, "error": "Password salah"}
-    return {"success": True, "username": username, "role": users[username].get("role", "user")}
+    try:
+        # Sanitize input
+        username = sanitize_input(username, 50)
+        
+        # Check login attempts
+        if login_tracker.is_locked(username):
+            logger.warning(f"Login locked for {username}")
+            return {"success": False, "error": f"Akaun dikunci. Cuba lagi dalam {LOCKOUT_MINUTES} minit"}
+        
+        users = load_users()
+        if username not in users:
+            login_tracker.add_attempt(username, False)
+            logger.warning(f"Login attempt failed: user '{username}' not found")
+            return {"success": False, "error": "Username tidak wujud"}
+        
+        # Verify with bcrypt
+        if not verify_password(password, users[username]["password"]):
+            login_tracker.add_attempt(username, False)
+            remaining = login_tracker.get_remaining_attempts(username)
+            logger.warning(f"Login attempt failed: wrong password for '{username}' - {remaining} attempts left")
+            return {"success": False, "error": f"Password salah ({remaining} percubaan lagi)"}
+        
+        login_tracker.add_attempt(username, True)
+        logger.info(f"User '{username}' logged in successfully")
+        
+        # Force password change for admin with default password
+        if username == "admin" and not users[username].get("password_changed", False):
+            return {"success": True, "username": username, "role": users[username].get("role", "admin"), "force_change": True}
+        
+        return {"success": True, "username": username, "role": users[username].get("role", "user")}
+    except Exception as e:
+        logger.error(f"Login error: {traceback.format_exc()}")
+        return {"success": False, "error": "Ralat sistem. Sila cuba lagi."}
 
 def register_user(username, password, email, name=""):
-    users = load_users()
-    if username in users:
-        return {"success": False, "error": "Username sudah wujud"}
-    if len(password) < 6:
-        return {"success": False, "error": "Password mesti 6 aksara"}
-    users[username] = {
-        "password": hash_password(password),
-        "role": "user",
-        "email": email,
-        "name": name or username,
-        "avatar": f"https://ui-avatars.com/api/?name={name or username}&background=4d6bfe&color=fff&size=40",
-        "settings": {"language": "Malay", "dark_mode": True},
-        "created_at": datetime.datetime.now().isoformat(),
-        "premium_until": None,
-        "total_requests": 0
-    }
-    save_users(users)
-    return {"success": True, "username": username}
+    try:
+        # Validate inputs
+        username = sanitize_input(username, 30)
+        email = sanitize_input(email, 100)
+        name = sanitize_input(name, 50)
+        
+        if not validate_username(username):
+            return {"success": False, "error": "Username 3-30 aksara (huruf, nombor, underscore)"}
+        
+        if not validate_email(email):
+            return {"success": False, "error": "Email tidak sah"}
+        
+        is_strong, msg = validate_password_strength(password)
+        if not is_strong:
+            return {"success": False, "error": msg}
+        
+        users = load_users()
+        if username in users:
+            return {"success": False, "error": "Username sudah wujud"}
+        
+        if any(u.get("email") == email for u in users.values()):
+            return {"success": False, "error": "Email sudah didaftarkan"}
+        
+        users[username] = {
+            "password": hash_password(password),
+            "role": "user",
+            "email": email,
+            "name": name or username,
+            "avatar": f"https://ui-avatars.com/api/?name={name or username}&background=4d6bfe&color=fff&size=40",
+            "settings": {"language": "Malay", "dark_mode": True},
+            "created_at": datetime.datetime.now().isoformat(),
+            "premium_until": None,
+            "total_requests": 0,
+            "email_verified": False,
+            "password_changed": True
+        }
+        save_users(users)
+        logger.info(f"New user registered: '{username}' ({email})")
+        return {"success": True, "username": username, "email_verification_required": True}
+    except Exception as e:
+        logger.error(f"Registration error: {traceback.format_exc()}")
+        return {"success": False, "error": "Ralat sistem. Sila cuba lagi."}
 
 def get_user_data(username):
     users = load_users()
@@ -207,8 +450,16 @@ def call_groq(prompt):
         response = requests.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
             return response.json()['choices'][0]['message']['content']
+        logger.error(f"Groq API error: {response.status_code} - {response.text}")
         return f"Ralat Groq: {response.status_code}"
+    except requests.exceptions.Timeout:
+        logger.error("Groq timeout")
+        return "Ralat: Timeout - Sila cuba lagi"
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Groq request error: {str(e)}")
+        return f"Ralat: {str(e)}"
     except Exception as e:
+        logger.error(f"Groq error: {traceback.format_exc()}")
         return f"Ralat: {str(e)}"
 
 def call_deepseek_r1(prompt):
@@ -224,22 +475,28 @@ def call_deepseek_r1(prompt):
         response = requests.post(url, json=payload, headers=headers, timeout=90)
         if response.status_code == 200:
             return response.json()['choices'][0]['message']['content']
+        logger.error(f"DeepSeek API error: {response.status_code}")
         return f"Ralat DeepSeek: {response.status_code}"
     except Exception as e:
+        logger.error(f"DeepSeek error: {traceback.format_exc()}")
         return f"Ralat: {str(e)}"
 
 def call_gemini(prompt):
     if not GEMINI_API_KEY:
         return None
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+        # Use header instead of URL param for security
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+        headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        response = requests.post(url, json=payload, timeout=30)
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
             data = response.json()
             return data['candidates'][0]['content']['parts'][0]['text']
+        logger.error(f"Gemini API error: {response.status_code}")
         return None
-    except:
+    except Exception as e:
+        logger.error(f"Gemini error: {traceback.format_exc()}")
         return None
 
 def call_claude(prompt):
@@ -260,8 +517,10 @@ def call_claude(prompt):
         response = requests.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
             return response.json()['content'][0]['text']
+        logger.error(f"Claude API error: {response.status_code}")
         return None
-    except:
+    except Exception as e:
+        logger.error(f"Claude error: {traceback.format_exc()}")
         return None
 
 def call_huggingface(prompt):
@@ -275,7 +534,8 @@ def call_huggingface(prompt):
         if response.status_code == 200:
             return response.json()[0]['generated_text']
         return None
-    except:
+    except Exception as e:
+        logger.error(f"HuggingFace error: {traceback.format_exc()}")
         return None
 
 def call_replicate(prompt):
@@ -302,7 +562,8 @@ def call_replicate(prompt):
                 time.sleep(1)
             return None
         return None
-    except:
+    except Exception as e:
+        logger.error(f"Replicate error: {traceback.format_exc()}")
         return None
 
 # ============================================================
@@ -321,15 +582,18 @@ def smart_ai_with_fallback(prompt):
         try:
             response = model_func(prompt)
             if response and not response.startswith("Ralat") and not response.startswith("❌"):
+                logger.info(f"Success with {model_name}")
                 return response
-        except:
+        except Exception as e:
+            logger.error(f"Fallback {model_name} failed: {str(e)}")
             continue
     return "Maaf, semua model AI tidak dapat diakses. Sila cuba lagi nanti."
 
 # ============================================================
-# DETECT SOALAN "SIAPA ANDA" - VERSI DIPERBAHARUI (DIUBAH)
+# DETECT SOALAN "SIAPA ANDA"
 # ============================================================
 def is_identity_question(prompt):
+    """Detect identity question - guna whole word matching"""
     identity_keywords = [
         "siapa anda", "siapa kamu", "siapa awak", "awak siapa", "anda siapa",
         "kamu siapa", "siapa kau", "kau siapa", "who are you", "who are u",
@@ -341,11 +605,11 @@ def is_identity_question(prompt):
     ]
     prompt_lower = prompt.lower().strip()
     for keyword in identity_keywords:
-        if keyword in prompt_lower:
+        if re.search(r'\b' + re.escape(keyword) + r'\b', prompt_lower):
             return True
     return False
 
-def get_identity_response():  # DIUBAH: ayat lebih menarik, kurang simbol
+def get_identity_response():
     return """Helo! Nama saya Joe, dan saya adalah AI assistant peribadi anda dari MyChatAI Pro.
 
 Saya direka khas untuk membantu anda dengan pelbagai tugasan harian secara pantas dan efektif. Saya menggunakan gabungan model AI terbaik seperti Groq, DeepSeek-R1, Gemini, Claude, HuggingFace dan Replicate untuk memberikan jawapan yang tepat dan berkualiti.
@@ -363,23 +627,35 @@ Ada apa-apa yang boleh saya bantu? Saya sedia membantu anda pada bila-bila masa.
 # SMART AI - UTAMA
 # ============================================================
 def smart_ai(username, prompt, think_mode=False, search_mode=False):
+    # Rate limit check
+    if not check_rate_limit(username):
+        logger.warning(f"Rate limit exceeded for {username}")
+        return "Maaf, terlalu banyak permintaan. Sila tunggu sebentar."
+
     limit_check = check_usage_limit(username)
     if not limit_check["allowed"]:
         return f"Had Penggunaan Bulanan Telah Dicapai\nPenggunaan: {limit_check['used']}/{limit_check['limit']}"
 
+    # Sanitize input
+    prompt = sanitize_prompt(prompt)
+
     if is_identity_question(prompt):
         return get_identity_response()
 
-    if think_mode:
-        response = call_deepseek_r1(prompt)
-    else:
-        response = call_groq(prompt)
+    try:
+        if think_mode:
+            response = call_deepseek_r1(prompt)
+        else:
+            response = call_groq(prompt)
 
-    if response.startswith("Ralat") or response.startswith("❌"):
-        response = smart_ai_with_fallback(prompt)
+        if response.startswith("Ralat") or response.startswith("❌"):
+            response = smart_ai_with_fallback(prompt)
 
-    increment_usage(username)
-    return response
+        increment_usage(username)
+        return response
+    except Exception as e:
+        logger.error(f"Smart AI error: {traceback.format_exc()}")
+        return "Maaf, berlaku ralat. Sila cuba lagi."
 
 # === CSS ===
 def apply_css():
@@ -612,6 +888,38 @@ def apply_css():
 # === LOGIN UI ===
 def login_ui():
     apply_css()
+    
+    # Check for force password change
+    if st.session_state.get("force_password_change", False):
+        st.markdown("""
+        <div style="max-width:420px; margin:0 auto; padding:40px 20px;">
+            <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:20px; padding:32px;">
+                <h2 style="color:#e8edf5; text-align:center;">🔐 Tukar Password</h2>
+                <p style="color:#f59e0b; text-align:center; font-size:14px;">Sila tukar password default anda untuk keselamatan.</p>
+        """, unsafe_allow_html=True)
+        
+        new_pass = st.text_input("Password Baru", type="password", key="force_new_pass")
+        confirm_pass = st.text_input("Confirm Password", type="password", key="force_confirm_pass")
+        
+        if st.button("💾 Tukar Password", use_container_width=True):
+            is_strong, msg = validate_password_strength(new_pass)
+            if not is_strong:
+                st.error(msg)
+            elif new_pass != confirm_pass:
+                st.error("Password tidak sama")
+            else:
+                users = load_users()
+                if st.session_state.username in users:
+                    users[st.session_state.username]["password"] = hash_password(new_pass)
+                    users[st.session_state.username]["password_changed"] = True
+                    save_users(users)
+                    st.session_state.force_password_change = False
+                    st.success("✅ Password berjaya ditukar! Sila login semula.")
+                    st.rerun()
+        
+        st.markdown("</div></div>", unsafe_allow_html=True)
+        return
+    
     st.markdown("""
     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:20px;">
         <div style="max-width:420px; width:100%; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:20px; padding:40px 32px;">
@@ -648,6 +956,9 @@ def login_ui():
                         st.session_state.username = result["username"]
                         st.session_state.role = result["role"]
                         st.session_state.messages = []
+                        st.session_state.session_start = time.time()
+                        if result.get("force_change", False):
+                            st.session_state.force_password_change = True
                         st.rerun()
                     else:
                         st.error(result["error"])
@@ -659,6 +970,8 @@ def login_ui():
                     result = register_user(username, password, email)
                     if result["success"]:
                         st.success(f"Akaun '{username}' didaftarkan! Sila login.")
+                        if result.get("email_verification_required", False):
+                            st.info("📧 Sila semak email untuk pengesahan.")
                     else:
                         st.error(result["error"])
                 else:
@@ -684,13 +997,18 @@ def settings_modal():
         if st.button("Tukar Password", use_container_width=True):
             users = load_users()
             if username in users:
-                if users[username]["password"] == hash_password(old_pass):
-                    if new_pass == confirm_pass and len(new_pass) >= 6:
+                if verify_password(old_pass, users[username]["password"]):
+                    is_strong, msg = validate_password_strength(new_pass)
+                    if not is_strong:
+                        st.error(msg)
+                    elif new_pass != confirm_pass:
+                        st.error("Password tidak sama")
+                    else:
                         users[username]["password"] = hash_password(new_pass)
+                        users[username]["password_changed"] = True
                         save_users(users)
                         st.success("✅ Password berjaya ditukar!")
-                    else:
-                        st.error("Password baru tidak sama atau kurang 6 aksara")
+                        logger.info(f"Password changed for {username}")
                 else:
                     st.error("Password lama salah")
 
@@ -714,13 +1032,21 @@ def settings_modal():
             st.success("✅ Terima kasih! Feedback anda akan diproses.")
 
         st.markdown("---")
-        st.caption("MyChatAI Pro v42.0")
+        st.caption("MyChatAI Pro v44.0")
         st.caption(f"{username} | {st.session_state.role}")
 
 # === CHAT UI ===
 def chat_ui():
     username = st.session_state.username
     user_data = get_user_data(username)
+
+    # Session timeout check
+    if "session_start" in st.session_state:
+        if time.time() - st.session_state.session_start > SESSION_TIMEOUT:
+            st.session_state.logged_in = False
+            st.session_state.messages = []
+            st.warning("Session tamat. Sila login semula.")
+            st.rerun()
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -739,7 +1065,7 @@ def chat_ui():
         st.markdown("""
         <div class="brand-title">
             <div class="main">💬 MyChatAI Pro</div>
-            <div class="version">v42.0</div>
+            <div class="version">v44.0</div>
             <div class="tagline">✨ Smart AI Assistant</div>
         </div>
         """, unsafe_allow_html=True)
@@ -932,7 +1258,7 @@ def feature_ui(feature):
             except:
                 st.error("Ralat")
 
-    elif feature == "🎬 Video":
+    elif feature == "Video":
         prompt = st.text_area("Huraikan video", height=80)
         duration = st.slider("Durasi (saat)", 3, 15, 5)
         if st.button("Hasilkan Video", use_container_width=True) and prompt:
@@ -947,7 +1273,7 @@ def feature_ui(feature):
                 except:
                     st.error("Ralat")
 
-    elif feature == "🎵 Music":
+    elif feature == "Music":
         st.info("🎵 Music Generator - Hasilkan lagu dengan TTS atau Suno")
         mode = st.radio("Pilih Mod:", ["TTS (Percuma)", "Suno (Lagu Sebenar)"], horizontal=True)
         prompt = st.text_area("Huraikan lagu:", height=80)
@@ -988,7 +1314,7 @@ def feature_ui(feature):
             clean_phone = re.sub(r'[^0-9]', '', phone)
             if not clean_phone.startswith('6'):
                 clean_phone = '6' + clean_phone
-            msg_encoded = requests.utils.quote(message)
+            msg_encoded = quote(message)
             whatsapp_url = f"https://wa.me/{clean_phone}?text={msg_encoded}"
             st.markdown(f'<a href="{whatsapp_url}" target="_blank"><button style="background:#25D366; color:white; padding:8px 16px; border:none; border-radius:8px; font-weight:600; cursor:pointer;">Buka WhatsApp</button></a>', unsafe_allow_html=True)
 
@@ -1032,7 +1358,7 @@ def feature_ui(feature):
         if st.button("Buka Tender", use_container_width=True) and tender_name and tender_budget > 0:
             st.success(f"Tender '{tender_name}' berjaya dibuka")
 
-    elif feature == " Business":
+    elif feature == "Business":
         st.markdown("""
         - Business Plan
         - Market Analysis
@@ -1044,14 +1370,14 @@ def feature_ui(feature):
             response = call_deepseek_r1("Hasilkan business plan untuk startup teknologi")
             st.markdown(response)
 
-    elif feature == " Fitness":
+    elif feature == "Fitness":
         goal = st.selectbox("Matlamat", ["Turun Berat", "Bina Otot", "Kekal Sihat"])
         days = st.slider("Hari seminggu", 1, 7, 3)
         if st.button("Jana Rancangan", use_container_width=True):
             response = call_deepseek_r1(f"Hasilkan rancangan senaman untuk matlamat {goal} ({days} hari seminggu)")
             st.markdown(response)
 
-    elif feature == " Meditation":
+    elif feature == "Meditation":
         duration = st.slider("Durasi (minit)", 1, 30, 10)
         if st.button("Mula Meditasi", use_container_width=True):
             response = call_deepseek_r1(f"Panduan meditasi selama {duration} minit")
@@ -1107,6 +1433,8 @@ def main():
         st.session_state.think_mode = False
     if "search_mode" not in st.session_state:
         st.session_state.search_mode = False
+    if "force_password_change" not in st.session_state:
+        st.session_state.force_password_change = False
 
     if not st.session_state.logged_in:
         login_ui()
