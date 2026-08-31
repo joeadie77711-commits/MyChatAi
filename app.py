@@ -11,7 +11,6 @@ import logging
 import traceback
 import html
 import bcrypt
-import fcntl
 import threading
 from io import BytesIO
 from PIL import Image
@@ -19,6 +18,12 @@ import base64
 import random
 from collections import defaultdict
 from urllib.parse import quote
+
+# === FCNTL FALLBACK UNTUK WINDOWS ===
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 # === LOGGING SETUP ===
 logging.basicConfig(
@@ -52,18 +57,23 @@ try:
     NEWS_API_KEY = st.secrets.get("NEWS_API_KEY", "")
     SEARCH_API_KEY = st.secrets.get("SEARCH_API_KEY", "")
     CRAZYROUTER_API_KEY = st.secrets.get("CRAZYROUTER_API_KEY", "")
-    ADMIN_EMAIL = st.secrets.get("ADMIN_EMAIL", "joe.adie77711@gmail.com")
-    ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "Joe@220481")  # Default jika tiada
-    MAX_FREE_REQUESTS = st.secrets.get("MAX_FREE_REQUESTS", 1000)
+    
+    # === WAJIB - TIADA DEFAULT ===
+    ADMIN_EMAIL = st.secrets.get("ADMIN_EMAIL")
+    ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD")
+    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        st.error("❌ Admin credentials not configured. Sila setup secrets.")
+        st.stop()
+    
+    # Cast MAX_FREE_REQUESTS ke int
+    try:
+        MAX_FREE_REQUESTS = int(st.secrets.get("MAX_FREE_REQUESTS", 1000))
+    except (TypeError, ValueError):
+        MAX_FREE_REQUESTS = 1000
+    
     DISCORD_WEBHOOK = st.secrets.get("DISCORD_WEBHOOK", "")
     TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
-    
-    # Validation - hanya warning, bukan error
-    if not ADMIN_EMAIL:
-        st.warning("ADMIN_EMAIL not set in secrets! Using default.")
-    if not ADMIN_PASSWORD:
-        st.warning("ADMIN_PASSWORD not set in secrets! Using default.")
         
 except KeyError as e:
     st.error(f"Missing required secret: {e}")
@@ -80,7 +90,7 @@ MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 MAX_INPUT_LENGTH = 4000
 
-# === FILE LOCKING - THREAD SAFE ===
+# === FILE LOCKING - THREAD SAFE DENGAN FCNTL FALLBACK ===
 class DataManager:
     def __init__(self):
         self.lock = threading.RLock()
@@ -89,9 +99,11 @@ class DataManager:
         with self.lock:
             try:
                 with open(USER_DATA_FILE, "w") as f:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    if fcntl:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                     json.dump(data, f, indent=2)
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                    if fcntl:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             except Exception as e:
                 logger.error(f"Error saving users: {traceback.format_exc()}")
                 st.error("Gagal menyimpan data pengguna")
@@ -100,9 +112,11 @@ class DataManager:
         with self.lock:
             try:
                 with open(CHAT_HISTORY_FILE, "w") as f:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    if fcntl:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                     json.dump(data, f, indent=2)
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                    if fcntl:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             except Exception as e:
                 logger.error(f"Error saving chats: {traceback.format_exc()}")
     
@@ -112,14 +126,18 @@ class DataManager:
             try:
                 if os.path.exists(USAGE_FILE):
                     with open(USAGE_FILE, "r") as f:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                        if fcntl:
+                            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                         all_data = json.load(f)
-                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                        if fcntl:
+                            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 all_data[username] = data
                 with open(USAGE_FILE, "w") as f:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    if fcntl:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                     json.dump(all_data, f, indent=2)
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                    if fcntl:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             except Exception as e:
                 logger.error(f"Error saving usage: {traceback.format_exc()}")
 
@@ -176,9 +194,13 @@ def sanitize_input(text, max_length=1000, allow_newlines=True):
     if text is None:
         return ""
     text = str(text)
+    # Remove HTML tags
     text = re.sub(r'<[^>]+>', '', text)
+    # Escape special characters
     text = html.escape(text)
-    text = re.sub(r'(?i)(system|assistant|role|ignore|forget|previous|instruction)', '[REDACTED]', text)
+    # Remove potential injection patterns - whole word only
+    text = re.sub(r'(?i)\b(system|assistant|role|ignore|forget|previous|instruction)\b', '[REDACTED]', text)
+    # Limit length
     if len(text) > max_length:
         text = text[:max_length] + "... (truncated)"
     return text.strip()
@@ -186,7 +208,7 @@ def sanitize_input(text, max_length=1000, allow_newlines=True):
 def sanitize_prompt(prompt):
     """Sanitize prompt for AI"""
     prompt = sanitize_input(prompt, MAX_INPUT_LENGTH)
-    prompt = re.sub(r'(?i)(you are|you are now|system prompt|developer mode)', '[REDACTED]', prompt)
+    prompt = re.sub(r'(?i)\b(you are|you are now|system prompt|developer mode)\b', '[REDACTED]', prompt)
     return prompt
 
 def validate_email(email):
@@ -217,9 +239,11 @@ def load_users():
     if os.path.exists(USER_DATA_FILE):
         try:
             with open(USER_DATA_FILE, "r") as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                if fcntl:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                 data = json.load(f)
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                if fcntl:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 return data
         except Exception as e:
             logger.error(f"Error loading users: {traceback.format_exc()}")
@@ -250,9 +274,11 @@ def load_chats():
     if os.path.exists(CHAT_HISTORY_FILE):
         try:
             with open(CHAT_HISTORY_FILE, "r") as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                if fcntl:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                 data = json.load(f)
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                if fcntl:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 return data
         except:
             return {}
@@ -265,9 +291,11 @@ def load_usage(username):
     if os.path.exists(USAGE_FILE):
         try:
             with open(USAGE_FILE, "r") as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                if fcntl:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                 data = json.load(f)
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                if fcntl:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             return data.get(username, {"count": 0, "month": datetime.datetime.now().month, "year": datetime.datetime.now().year})
         except:
             pass
@@ -565,7 +593,8 @@ def smart_ai_with_fallback(prompt):
     for model_name, model_func in models:
         try:
             response = model_func(prompt)
-            if response and not response.startswith("Ralat") and not response.startswith("❌"):
+            # Handle non-string responses
+            if isinstance(response, str) and response and not response.startswith("Ralat") and not response.startswith("❌"):
                 logger.info(f"Success with {model_name}")
                 return response
         except Exception as e:
@@ -630,7 +659,7 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
         else:
             response = call_groq(prompt)
 
-        if response.startswith("Ralat") or response.startswith("❌"):
+        if isinstance(response, str) and (response.startswith("Ralat") or response.startswith("❌")):
             response = smart_ai_with_fallback(prompt)
 
         increment_usage(username)
@@ -1138,10 +1167,12 @@ def chat_ui():
         """, unsafe_allow_html=True)
 
     for msg in st.session_state.messages:
+        # Escape content before displaying (XSS protection)
+        safe_content = html.escape(msg["content"])
         if msg["role"] == "user":
-            st.markdown(f'<div class="chat-bubble-user">{msg["content"]}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="chat-bubble-user">{safe_content}</div>', unsafe_allow_html=True)
         else:
-            st.markdown(f'<div class="chat-bubble-ai">{msg["content"]}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="chat-bubble-ai">{safe_content}</div>', unsafe_allow_html=True)
 
     st.markdown("""
     <div class="input-container">
@@ -1168,9 +1199,11 @@ def chat_ui():
     with col_send:
         if st.button("➤ Send", key="send_btn", use_container_width=True):
             if user_input.strip():
-                st.session_state.messages.append({"role": "user", "content": user_input})
+                # Sanitize input before saving (XSS protection)
+                safe_input = sanitize_input(user_input, MAX_INPUT_LENGTH)
+                st.session_state.messages.append({"role": "user", "content": safe_input})
                 with st.spinner("Menghasilkan..."):
-                    response = smart_ai(username, user_input, st.session_state.think_mode, st.session_state.search_mode)
+                    response = smart_ai(username, safe_input, st.session_state.think_mode, st.session_state.search_mode)
                 st.session_state.messages.append({"role": "ai", "content": response})
                 st.rerun()
 
