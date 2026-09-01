@@ -1227,7 +1227,7 @@ def settings_modal():
                 else:
                     st.error("Password lama salah")
 
-        if st.session_state.role == "admin":
+        if st.session_state.get("role", "user") == "admin":
             st.markdown("---")
             st.markdown("### 🔑 Admin - Reset Password")
             reset_user = st.text_input("Username pengguna", placeholder="Masukkan username", key="reset_user_input")
