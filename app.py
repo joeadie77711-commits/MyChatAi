@@ -1111,7 +1111,7 @@ def login_ui():
         with col1:
             submitted = st.form_submit_button("🔓 Login", use_container_width=True, type="primary")
         with col2:
-            if st.button("📝 Daftar", use_container_width=True):
+            if st.form_submit_button("📝 Daftar", use_container_width=True):
                 st.session_state.show_register = True
                 st.rerun()
         if submitted:
