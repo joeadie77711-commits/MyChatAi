@@ -1275,7 +1275,7 @@ def settings_modal():
 
         st.markdown("---")
         st.caption("MyChatAI Pro v44.0")
-        st.caption(f"User | {st.session_state.role}")
+        st.caption(f"{st.session_state.get('username', 'User')} | {st.session_state.get('role', 'user')}")
 
 # === CHAT UI ===
 def chat_ui():
