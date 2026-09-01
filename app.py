@@ -1,4 +1,4 @@
-# app.py - MyChatAI Pro v44.0 (Final - 100/100)
+# app.py - MyChatAI Pro v44.0 (Dengan Login Sekali - Fixed)
 import streamlit as st
 import datetime
 import json
@@ -143,6 +143,16 @@ SESSION_TIMEOUT = 86400
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 MAX_INPUT_LENGTH = 4000
+
+# === SESSION MANAGEMENT (LOGIN SEKALI) ===
+def save_session(username):
+    """Simpan session ke query params untuk auto login"""
+    st.query_params["session"] = username
+    st.query_params["login_time"] = str(time.time())
+
+def clear_session():
+    """Hapus session"""
+    st.query_params.clear()
 
 # === HASH FUNCTIONS ===
 def hash_password(password):
@@ -476,6 +486,20 @@ def is_premium(username):
 
 def check_rate_limit(username, limit=30, window=60):
     return rate_limiter.check(username, limit, window)
+
+# === CHECK AUTO LOGIN (DIPINDAHKAN KE SINI - SELEPAS load_users()) ===
+def check_auto_login():
+    """Check sama ada ada session tersimpan"""
+    if "session" in st.query_params:
+        username = st.query_params["session"]
+        users = load_users()
+        if username in users:
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            st.session_state.messages = []
+            st.session_state.session_start = time.time()
+            return True
+    return False
 
 # === AUTH FUNCTIONS ===
 def login_user(username, password):
@@ -1120,9 +1144,10 @@ def login_ui():
                 if result["success"]:
                     st.session_state.logged_in = True
                     st.session_state.username = result["username"]
-                    st.session_state.role = result["role"]
                     st.session_state.messages = []
                     st.session_state.session_start = time.time()
+                    # Simpan session untuk auto login
+                    save_session(result["username"])
                     if result.get("force_change", False):
                         st.session_state.force_password_change = True
                     st.rerun()
@@ -1263,6 +1288,7 @@ def chat_ui():
             st.session_state.logged_in = False
             st.session_state.messages = []
             st.warning("Session tamat. Sila login semula.")
+            clear_session()
             st.rerun()
         elif elapsed > SESSION_TIMEOUT - 600:
             remaining = int((SESSION_TIMEOUT - elapsed) / 60)
@@ -1364,6 +1390,15 @@ def chat_ui():
 
         if st.session_state.get("show_settings", False):
             settings_modal()
+
+        st.markdown("---")
+        # === BUTTON LOGOUT ===
+        if st.button("🚪 Logout", use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.username = None
+            st.session_state.messages = []
+            clear_session()
+            st.rerun()
 
         st.markdown("""
         <div class="footer-credit">
@@ -1714,6 +1749,12 @@ def main():
         st.session_state.force_password_change = False
     if "show_register" not in st.session_state:
         st.session_state.show_register = False
+
+    # === CHECK AUTO LOGIN ===
+    if not st.session_state.logged_in:
+        if check_auto_login():
+            st.rerun()
+            return
 
     if not st.session_state.logged_in:
         login_ui()
