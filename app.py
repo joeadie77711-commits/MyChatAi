@@ -1,4 +1,4 @@
-# app.py - MyChatAI Pro v70.7 (PEMBAIKAN LANJUTAN)
+# app.py - MyChatAI Pro v70.8 (FINAL - SEMUA PEMBAIKAN LENGKAP)
 # ============================================================
 
 import streamlit as st
@@ -29,13 +29,11 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import logging.handlers
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from functools import lru_cache
-from typing import Optional, Dict, Any, Tuple
 
 # ============================================================
 # === VERSION ===
 # ============================================================
-APP_VERSION = "v70.7"
+APP_VERSION = "v70.8"
 APP_NAME = "MyChatAI Pro"
 
 # ============================================================
@@ -73,7 +71,9 @@ class SecureLogger:
             r'sk-or-v1-[a-zA-Z0-9]+',
             r'sk-[a-zA-Z0-9]+',
             r'hf_[a-zA-Z0-9]+',
+            r'sess_[a-zA-Z0-9]+',
         ]
+        # Jangan redact email untuk debug
         self.redact_email = False
 
     def sanitize_log(self, message):
@@ -81,6 +81,9 @@ class SecureLogger:
             return message
         for pattern in self.sensitive_patterns:
             message = re.sub(pattern, '[REDACTED]', str(message), flags=re.IGNORECASE)
+        # Optional: redact email if enabled
+        if self.redact_email:
+            message = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '[EMAIL]', message)
         return message
 
     def log_info(self, message, *args, **kwargs):
@@ -118,7 +121,7 @@ TYPING_SPEED_FAST = 0.005
 TYPING_SPEED_SLOW = 0.015
 MAX_INPUT_LENGTH = 4000
 MAX_HISTORY_PER_USER = 50
-MAX_CONTEXT_MESSAGES = 10
+MAX_CONTEXT_MESSAGES = 5
 
 USER_DATA_FILE = "mychat_users.json"
 CHAT_HISTORY_FILE = "mychat_chats.json"
@@ -127,15 +130,18 @@ CONVERSATION_FLOW_FILE = "conversation_flows.json"
 USER_PERSONALITY_FILE = "user_personalities.json"
 CONTEXT_MEMORY_FILE = "context_memory.json"
 DEFAULT_AVATAR = "https://ui-avatars.com/api/?name=User&background=4d6bfe&color=fff&size=40"
-SESSION_TIMEOUT = 31536000
+SESSION_TIMEOUT = 31536000  # 1 year
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 
-# Session salt dari secrets dengan fallback
+# ============================================================
+# === SESSION SALT - WAJIB ADA DI SECRETS ===
+# ============================================================
 _SESSION_SALT = st.secrets.get("SESSION_SECRET")
 if not _SESSION_SALT:
-    secure_logger.log_warning("SESSION_SECRET not set in secrets. Using generated salt.")
-    _SESSION_SALT = secrets.token_urlsafe(32)
+    secure_logger.log_error("SESSION_SECRET not configured in secrets!")
+    st.error("SESSION_SECRET not configured. Please add to .streamlit/secrets.toml")
+    st.stop()
 
 # ============================================================
 # === CACHING ===
@@ -149,15 +155,6 @@ def load_usage_cached(username):
     data = safe_read_json("mychat_usage.json", {})
     return data.get(username, {"count": 0})
 
-@st.cache_data(ttl=3600)
-def validate_openai_key_cached():
-    return _validate_openai_key_impl()
-
-@st.cache_data(ttl=300)
-def get_api_status_cached():
-    """Cache API status checks"""
-    return _get_api_status_impl()
-
 # ============================================================
 # === PORTALOCKER FALLBACK ===
 # ============================================================
@@ -166,6 +163,7 @@ try:
     HAVE_PORTALOCKER = True
 except ImportError:
     HAVE_PORTALOCKER = False
+    secure_logger.log_warning("portalocker not installed. File operations may have race conditions.")
 
 # ============================================================
 # === REQUESTS SESSION ===
@@ -181,7 +179,6 @@ def get_requests_session():
     adapter = HTTPAdapter(max_retries=retries, pool_connections=10, pool_maxsize=20)
     session.mount('https://', adapter)
     session.mount('http://', adapter)
-    session.timeout = API_TIMEOUT
     session.headers.update({
         'User-Agent': f'{APP_NAME}/{APP_VERSION}'
     })
@@ -212,7 +209,7 @@ def safe_get(obj, path, default=None):
 def safe_read_json(filepath, default=None, retries=3):
     for attempt in range(retries):
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath, 'r', encoding='utf-8') as f:
                 if HAVE_PORTALOCKER:
                     portalocker.lock(f, portalocker.LOCK_SH)
                 data = json.load(f)
@@ -222,16 +219,16 @@ def safe_read_json(filepath, default=None, retries=3):
         except FileNotFoundError:
             return default if default is not None else {}
         except json.JSONDecodeError as e:
-            secure_logger.log_error(f"JSON decode error: {str(e)}")
+            secure_logger.log_error(f"JSON decode error in {filepath}: {str(e)}")
             return default if default is not None else {}
         except PermissionError as e:
-            secure_logger.log_error(f"Permission error: {str(e)}")
+            secure_logger.log_error(f"Permission error in {filepath}: {str(e)}")
             if attempt < retries - 1:
                 time.sleep(0.5 * (attempt + 1))
                 continue
             return default if default is not None else {}
         except Exception as e:
-            secure_logger.log_error(f"Safe read error: {traceback.format_exc()}")
+            secure_logger.log_error(f"Safe read error in {filepath}: {traceback.format_exc()}")
             if attempt < retries - 1:
                 time.sleep(0.5 * (attempt + 1))
                 continue
@@ -242,7 +239,7 @@ def safe_write_json(filepath, data, retries=3):
     temp_file = filepath + ".tmp"
     for attempt in range(retries):
         try:
-            with open(temp_file, 'w') as f:
+            with open(temp_file, 'w', encoding='utf-8') as f:
                 if HAVE_PORTALOCKER:
                     portalocker.lock(f, portalocker.LOCK_EX)
                 json.dump(data, f, indent=2, ensure_ascii=False)
@@ -251,12 +248,12 @@ def safe_write_json(filepath, data, retries=3):
             os.replace(temp_file, filepath)
             return True
         except PermissionError as e:
-            secure_logger.log_error(f"Permission error: {str(e)}")
+            secure_logger.log_error(f"Permission error writing {filepath}: {str(e)}")
             if attempt < retries - 1:
                 time.sleep(0.5 * (attempt + 1))
                 continue
         except Exception as e:
-            secure_logger.log_error(f"Safe write error: {traceback.format_exc()}")
+            secure_logger.log_error(f"Safe write error in {filepath}: {traceback.format_exc()}")
             if attempt < retries - 1:
                 time.sleep(0.5 * (attempt + 1))
                 continue
@@ -268,42 +265,18 @@ def safe_write_json(filepath, data, retries=3):
     return False
 
 # ============================================================
-# === RATE LIMITING (Improved with periodic flush) ===
+# === RATE LIMITING - IN-MEMORY ONLY ===
 # ============================================================
 _rate_limit_cache = {}
 _rate_limit_cache_lock = threading.RLock()
-_RATE_LIMIT_BATCH_SIZE = 10
-_rate_limit_counter = 0
-_RATE_LIMIT_FLUSH_INTERVAL = 60  # Flush every 60 seconds
-_rate_limit_last_flush = time.time()
-
-def load_rate_limits():
-    return safe_read_json("rate_limits.json", {})
-
-def save_rate_limits(data):
-    safe_write_json("rate_limits.json", data)
-
-def _flush_rate_limits():
-    global _rate_limit_counter, _rate_limit_last_flush
-    current_time = time.time()
-    if current_time - _rate_limit_last_flush >= _RATE_LIMIT_FLUSH_INTERVAL or _rate_limit_counter >= _RATE_LIMIT_BATCH_SIZE:
-        with _rate_limit_cache_lock:
-            if _rate_limit_counter > 0:
-                data = load_rate_limits()
-                for user, times in _rate_limit_cache.items():
-                    data[user] = times
-                save_rate_limits(data)
-                _rate_limit_counter = 0
-                _rate_limit_last_flush = current_time
 
 def check_rate_limit(username, limit=30, window=60):
-    global _rate_limit_counter
+    """In-memory rate limiting - no file I/O"""
     now = time.time()
     
     with _rate_limit_cache_lock:
         if username not in _rate_limit_cache:
-            data = load_rate_limits()
-            _rate_limit_cache[username] = data.get(username, [])
+            _rate_limit_cache[username] = []
         
         # Clean old entries
         _rate_limit_cache[username] = [t for t in _rate_limit_cache[username] if now - t < window]
@@ -312,11 +285,6 @@ def check_rate_limit(username, limit=30, window=60):
             return False
         
         _rate_limit_cache[username].append(now)
-        _rate_limit_counter += 1
-        
-        # Periodic flush
-        _flush_rate_limits()
-        
         return True
 
 # ============================================================
@@ -366,15 +334,15 @@ def save_chats(data):
     safe_write_json(CHAT_HISTORY_FILE, data)
 
 # ============================================================
-# === SMART CACHE (Improved with LRU) ===
+# === SMART CACHE ===
 # ============================================================
 class SmartCache:
     def __init__(self):
         self.cache = {}
         self.cache_time = {}
-        self.cache_access = {}  # Track access for LRU
+        self.cache_access = {}
         self.cache_duration = 3600
-        self.max_cache_size = 200  # Increased from 100
+        self.max_cache_size = 200
         self.cache_file = "cache_data.json"
         self._cache_counter = 0
         self._lock = threading.RLock()
@@ -383,7 +351,7 @@ class SmartCache:
     def _load_cache_from_file(self):
         if os.path.exists(self.cache_file):
             try:
-                with open(self.cache_file, 'r') as f:
+                with open(self.cache_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 current_time = time.time()
                 for key, value in data.items():
@@ -404,8 +372,8 @@ class SmartCache:
                     'expires_at': self.cache_time.get(key, 0) + self.cache_duration,
                     'last_access': self.cache_access.get(key, 0)
                 }
-            with open(self.cache_file, 'w') as f:
-                json.dump(data, f, indent=2)
+            with open(self.cache_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception as e:
             secure_logger.log_error(f"Save cache error: {str(e)}")
 
@@ -417,25 +385,17 @@ class SmartCache:
                 if current_time - v > self.cache_duration
             ]
             for k in expired_keys:
-                if k in self.cache:
-                    del self.cache[k]
-                if k in self.cache_time:
-                    del self.cache_time[k]
-                if k in self.cache_access:
-                    del self.cache_access[k]
+                self.cache.pop(k, None)
+                self.cache_time.pop(k, None)
+                self.cache_access.pop(k, None)
 
-            # LRU eviction if still over limit
             if len(self.cache) > self.max_cache_size:
-                # Sort by last access time (oldest first)
                 sorted_keys = sorted(self.cache_access.items(), key=lambda x: x[1])
                 to_remove = len(self.cache) - self.max_cache_size
                 for k, _ in sorted_keys[:to_remove]:
-                    if k in self.cache:
-                        del self.cache[k]
-                    if k in self.cache_time:
-                        del self.cache_time[k]
-                    if k in self.cache_access:
-                        del self.cache_access[k]
+                    self.cache.pop(k, None)
+                    self.cache_time.pop(k, None)
+                    self.cache_access.pop(k, None)
 
     def get_cached_response(self, prompt):
         with self._lock:
@@ -444,7 +404,6 @@ class SmartCache:
 
             if prompt_hash in self.cache:
                 if time.time() - self.cache_time.get(prompt_hash, 0) < self.cache_duration:
-                    # Update access time
                     self.cache_access[prompt_hash] = time.time()
                     return self.cache[prompt_hash]
 
@@ -466,14 +425,14 @@ class SmartCache:
 smart_cache = SmartCache()
 
 # ============================================================
-# === TYPING EFFECT (Improved) ===
+# === TYPING EFFECT ===
 # ============================================================
 class TypingEffect:
     def __init__(self):
-        self._placeholder = None
         self._is_streaming = False
 
     def stream_response(self, text, placeholder=None):
+        """Stream response with typing effect"""
         if not text:
             yield ""
             return
@@ -484,7 +443,6 @@ class TypingEffect:
         self._is_streaming = True
         
         try:
-            # Split into words for more natural typing
             words = text.split()
             accumulated = ""
             
@@ -515,7 +473,7 @@ class TypingEffect:
 typing_effect = TypingEffect()
 
 # ============================================================
-# === CONTEXT MEMORY (Improved) ===
+# === CONTEXT MEMORY ===
 # ============================================================
 class ContextMemory:
     def __init__(self):
@@ -558,8 +516,10 @@ class ContextMemory:
             context = self.memory[username][-max_messages:]
             formatted = "Previous conversation:\n"
             for c in context:
-                formatted += f"User: {c['question'][:150]}...\n" if len(c['question']) > 150 else f"User: {c['question']}\n"
-                formatted += f"Assistant: {c['answer'][:100]}...\n" if len(c['answer']) > 100 else f"Assistant: {c['answer']}\n"
+                q_text = c['question'][:150] + "..." if len(c['question']) > 150 else c['question']
+                a_text = c['answer'][:100] + "..." if len(c['answer']) > 100 else c['answer']
+                formatted += f"User: {q_text}\n"
+                formatted += f"Assistant: {a_text}\n"
             return formatted
         return ""
 
@@ -577,17 +537,32 @@ context_memory = ContextMemory()
 # ============================================================
 OPENAI_SDK_VERSION = None
 OPENAI_AVAILABLE = False
+OPENAI_V1 = False
+OPENAI_LEGACY = False
 
 try:
     import openai
     OPENAI_AVAILABLE = True
     if hasattr(openai, "__version__"):
         OPENAI_SDK_VERSION = openai.__version__
+        # Safe version check
+        ver_parts = OPENAI_SDK_VERSION.split(".")
+        if ver_parts and ver_parts[0].isdigit():
+            major = int(ver_parts[0])
+            if major >= 1:
+                OPENAI_V1 = True
+            else:
+                OPENAI_LEGACY = True
+        else:
+            OPENAI_LEGACY = True
     elif hasattr(openai, "version"):
         OPENAI_SDK_VERSION = openai.version.VERSION
-    secure_logger.log_info(f"OpenAI SDK version: {OPENAI_SDK_VERSION}")
+        OPENAI_LEGACY = True
+    
+    secure_logger.log_info(f"OpenAI SDK version: {OPENAI_SDK_VERSION}, V1: {OPENAI_V1}, Legacy: {OPENAI_LEGACY}")
 except ImportError:
     OPENAI_AVAILABLE = False
+    secure_logger.log_warning("OpenAI library not installed")
 
 # Firebase imports
 try:
@@ -604,7 +579,7 @@ except ImportError:
     PYBASE_AVAILABLE = False
 
 # ============================================================
-# === FIREBASE MANAGER (Improved) ===
+# === FIREBASE MANAGER ===
 # ============================================================
 class FirebaseManager:
     def __init__(self):
@@ -788,7 +763,7 @@ class FirebaseManager:
                     "uid": uid,
                     "data": {
                         "role": role,
-                        "message": message[:1000],  # Truncate to avoid size limits
+                        "message": message[:1000],
                         "response": response[:1000],
                         "timestamp": datetime.datetime.now().isoformat()
                     }
@@ -876,20 +851,15 @@ class AccountLockout:
 account_lockout = AccountLockout()
 
 # ============================================================
-# === SESSION MANAGEMENT (Improved) ===
+# === SESSION MANAGEMENT ===
 # ============================================================
 def save_session(username):
     try:
-        # Try newer Streamlit API first
-        if hasattr(st, "query_params"):
-            st.query_params.session = username
-            st.query_params.login_time = str(time.time())
-        else:
-            # Fallback for older versions
-            st.experimental_set_query_params(
-                session=username,
-                login_time=str(time.time())
-            )
+        # Guna experimental_set_query_params untuk keserasian
+        st.experimental_set_query_params(
+            session=username,
+            login_time=str(time.time())
+        )
     except Exception as e:
         secure_logger.log_error(f"Save session error: {str(e)}")
         st.session_state._session_uid = username
@@ -897,19 +867,13 @@ def save_session(username):
 
 def clear_session():
     try:
-        # Try newer Streamlit API first
-        if hasattr(st, "query_params"):
-            st.query_params = {}
-        else:
-            # Fallback for older versions
-            st.experimental_set_query_params()
+        st.experimental_set_query_params()
     except Exception as e:
         secure_logger.log_error(f"Clear session error: {str(e)}")
     
     st.session_state.logged_in = False
     st.session_state.messages = []
-    keys_to_remove = ["_session_uid", "_login_time", "_session_id", "session_hash", "uid", "username", "email", "role"]
-    for key in keys_to_remove:
+    for key in ["_session_uid", "_login_time", "_session_id", "session_hash", "uid", "username", "email", "role"]:
         if key in st.session_state:
             try:
                 del st.session_state[key]
@@ -922,10 +886,7 @@ def check_auto_login():
             return True
         
         try:
-            if hasattr(st, "query_params"):
-                params = st.query_params
-            else:
-                params = st.experimental_get_query_params()
+            params = st.experimental_get_query_params()
         except Exception:
             params = {}
         
@@ -1015,7 +976,150 @@ def validate_session():
         return False
 
 # ============================================================
-# === EMOTIONAL INTELLIGENCE (Enhanced) ===
+# === AIPersonality ===
+# ============================================================
+class AIPersonality:
+    def __init__(self):
+        self.personalities = {
+            "professional": {"description": "Formal and professional tone"},
+            "friendly": {"description": "Warm and approachable"},
+            "creative": {"description": "Imaginative and innovative"},
+            "teacher": {"description": "Educational and instructive"},
+            "analytical": {"description": "Logical and detail-oriented"}
+        }
+        self.current = "professional"
+
+    def get_personality(self):
+        return self.personalities.get(self.current, self.personalities["professional"])
+
+    def set_personality(self, personality):
+        if personality in self.personalities:
+            self.current = personality
+
+ai_personality = AIPersonality()
+
+# ============================================================
+# === USER PERSONALITY ===
+# ============================================================
+class UserPersonality:
+    def __init__(self):
+        self.user_profiles = {}
+        self.user_file = USER_PERSONALITY_FILE
+        self._lock = threading.RLock()
+        self._load_profiles()
+
+    def _load_profiles(self):
+        self.user_profiles = safe_read_json(self.user_file, {})
+
+    def _save_profiles(self):
+        safe_write_json(self.user_file, self.user_profiles)
+
+    def learn_user(self, username, text):
+        with self._lock:
+            if username not in self.user_profiles:
+                self.user_profiles[username] = {
+                    "interactions": 0,
+                    "emotions": [],
+                    "preferred_language": "Malay",
+                    "formality_level": 0.5,
+                    "common_words": [],
+                    "last_interaction": datetime.datetime.now().isoformat()
+                }
+            profile = self.user_profiles[username]
+            profile["interactions"] += 1
+            profile["last_interaction"] = datetime.datetime.now().isoformat()
+            
+            # Detect language preference
+            malay_words = ["saya", "awak", "kamu", "aku", "kita", "dan", "atau", "tetapi", "kerana", "jadi", "yang", "dengan", "untuk"]
+            english_words = ["i", "you", "we", "they", "and", "or", "but", "because", "so", "the", "with", "for", "this"]
+            malay_score = sum(1 for w in malay_words if w in text.lower())
+            english_score = sum(1 for w in english_words if w in text.lower())
+            
+            if malay_score > english_score:
+                profile["preferred_language"] = "Malay"
+            elif english_score > malay_score:
+                profile["preferred_language"] = "English"
+            
+            # Track emotion history
+            emotion = emotional_ai.detect_emotion(text)
+            if emotion != "neutral":
+                profile["emotions"].append(emotion)
+                if len(profile["emotions"]) > 20:
+                    profile["emotions"] = profile["emotions"][-20:]
+            
+            self._save_profiles()
+            return profile
+
+    def get_user_profile(self, username):
+        return self.user_profiles.get(username, {})
+
+    def get_personalized_greeting(self, username):
+        profile = self.user_profiles.get(username, {})
+        interactions = profile.get("interactions", 0)
+        language = profile.get("preferred_language", "Malay")
+        
+        if interactions == 0:
+            if language == "Malay":
+                return "Hai! Saya Joe, AI assistant peribadi anda. Ada apa-apa yang saya boleh bantu hari ini?"
+            return "Hi! I'm Joe, your personal AI assistant. How can I help you today?"
+        elif interactions < 5:
+            if language == "Malay":
+                return "Selamat datang kembali! Bagaimana hari anda setakat ini?"
+            return "Welcome back! How's your day going so far?"
+        else:
+            if language == "Malay":
+                return "Lama tak jumpa! Rindu nak berbual dengan anda. Apa khabar?"
+            return "Long time no see! Missed chatting with you. How have you been?"
+
+user_personality = UserPersonality()
+
+# ============================================================
+# === CONVERSATION FLOW ===
+# ============================================================
+class ConversationFlow:
+    def __init__(self):
+        self.conversations = {}
+        self.conversation_file = CONVERSATION_FLOW_FILE
+        self._lock = threading.RLock()
+        self._load_flows()
+
+    def _load_flows(self):
+        self.conversations = safe_read_json(self.conversation_file, {})
+
+    def _save_flows(self):
+        safe_write_json(self.conversation_file, self.conversations)
+
+    def add_turn(self, username, user_message, ai_response):
+        with self._lock:
+            if username not in self.conversations:
+                self.conversations[username] = {"context": [], "turn_count": 0}
+            flow = self.conversations[username]
+            flow["turn_count"] += 1
+            flow["context"].append({
+                "user": user_message[:300],
+                "ai": ai_response[:300],
+                "time": datetime.datetime.now().isoformat()
+            })
+            if len(flow["context"]) > 20:
+                flow["context"] = flow["context"][-20:]
+            self._save_flows()
+
+    def detect_topic_shift(self, username, user_message):
+        if username not in self.conversations:
+            return True
+        flow = self.conversations[username]
+        if not flow["context"]:
+            return True
+        last_context = flow["context"][-1]["user"]
+        common_words = set(last_context.lower().split()) & set(user_message.lower().split())
+        if len(common_words) / max(len(set(last_context.lower().split())), 1) < 0.2:
+            return True
+        return False
+
+conversation_flow = ConversationFlow()
+
+# ============================================================
+# === EMOTIONAL INTELLIGENCE ===
 # ============================================================
 class EmotionalIntelligence:
     def __init__(self):
@@ -1129,128 +1233,6 @@ class EmotionalIntelligence:
 emotional_ai = EmotionalIntelligence()
 
 # ============================================================
-# === USER PERSONALITY (Enhanced) ===
-# ============================================================
-class UserPersonality:
-    def __init__(self):
-        self.user_profiles = {}
-        self.user_file = USER_PERSONALITY_FILE
-        self._load_profiles()
-        self._lock = threading.RLock()
-
-    def _load_profiles(self):
-        self.user_profiles = safe_read_json(self.user_file, {})
-
-    def _save_profiles(self):
-        safe_write_json(self.user_file, self.user_profiles)
-
-    def learn_user(self, username, text):
-        with self._lock:
-            if username not in self.user_profiles:
-                self.user_profiles[username] = {
-                    "interactions": 0,
-                    "emotions": [],
-                    "preferred_language": "Malay",
-                    "formality_level": 0.5,
-                    "common_words": [],
-                    "last_interaction": datetime.datetime.now().isoformat()
-                }
-            profile = self.user_profiles[username]
-            profile["interactions"] += 1
-            profile["last_interaction"] = datetime.datetime.now().isoformat()
-            
-            # Detect language preference
-            malay_words = ["saya", "awak", "kamu", "aku", "kita", "dan", "atau", "tetapi", "kerana", "jadi", "yang", "dengan", "untuk"]
-            english_words = ["i", "you", "we", "they", "and", "or", "but", "because", "so", "the", "with", "for", "this"]
-            malay_score = sum(1 for w in malay_words if w in text.lower())
-            english_score = sum(1 for w in english_words if w in text.lower())
-            
-            if malay_score > english_score:
-                profile["preferred_language"] = "Malay"
-            elif english_score > malay_score:
-                profile["preferred_language"] = "English"
-            # else keep existing
-            
-            # Track emotion history
-            emotion = emotional_ai.detect_emotion(text)
-            if emotion != "neutral":
-                profile["emotions"].append(emotion)
-                if len(profile["emotions"]) > 20:
-                    profile["emotions"] = profile["emotions"][-20:]
-            
-            self._save_profiles()
-            return profile
-
-    def get_user_profile(self, username):
-        return self.user_profiles.get(username, {})
-
-    def get_personalized_greeting(self, username):
-        profile = self.user_profiles.get(username, {})
-        interactions = profile.get("interactions", 0)
-        language = profile.get("preferred_language", "Malay")
-        
-        if interactions == 0:
-            if language == "Malay":
-                return "Hai! Saya Joe, AI assistant peribadi anda. Ada apa-apa yang saya boleh bantu hari ini?"
-            return "Hi! I'm Joe, your personal AI assistant. How can I help you today?"
-        elif interactions < 5:
-            if language == "Malay":
-                return "Selamat datang kembali! Bagaimana hari anda setakat ini?"
-            return "Welcome back! How's your day going so far?"
-        else:
-            if language == "Malay":
-                return "Lama tak jumpa! Rindu nak berbual dengan anda. Apa khabar?"
-            return "Long time no see! Missed chatting with you. How have you been?"
-
-user_personality = UserPersonality()
-
-# ============================================================
-# === CONVERSATION FLOW ===
-# ============================================================
-class ConversationFlow:
-    def __init__(self):
-        self.conversations = {}
-        self.conversation_file = CONVERSATION_FLOW_FILE
-        self._lock = threading.RLock()
-        self._load_flows()
-
-    def _load_flows(self):
-        self.conversations = safe_read_json(self.conversation_file, {})
-
-    def _save_flows(self):
-        safe_write_json(self.conversation_file, self.conversations)
-
-    def add_turn(self, username, user_message, ai_response):
-        with self._lock:
-            if username not in self.conversations:
-                self.conversations[username] = {"context": [], "turn_count": 0}
-            flow = self.conversations[username]
-            flow["turn_count"] += 1
-            flow["context"].append({
-                "user": user_message[:300],
-                "ai": ai_response[:300],
-                "time": datetime.datetime.now().isoformat()
-            })
-            if len(flow["context"]) > 20:
-                flow["context"] = flow["context"][-20:]
-            self._save_flows()
-
-    def detect_topic_shift(self, username, user_message):
-        if username not in self.conversations:
-            return True
-        flow = self.conversations[username]
-        if not flow["context"]:
-            return True
-        last_context = flow["context"][-1]["user"]
-        common_words = set(last_context.lower().split()) & set(user_message.lower().split())
-        # If less than 20% common words, consider it a topic shift
-        if len(common_words) / max(len(set(last_context.lower().split())), 1) < 0.2:
-            return True
-        return False
-
-conversation_flow = ConversationFlow()
-
-# ============================================================
 # === EMOTIONAL RESPONSE GENERATOR ===
 # ============================================================
 class EmotionalResponseGenerator:
@@ -1267,11 +1249,9 @@ class EmotionalResponseGenerator:
         
         response_parts = []
         
-        # Add emotional response if appropriate
         if emotion_response and emotion != "neutral" and random.random() < 0.35:
             response_parts.append(emotion_response)
         
-        # Add transition if topic shifted
         if topic_shifted and random.random() < 0.4:
             language = profile.get("preferred_language", "English")
             if language == "Malay":
@@ -1282,7 +1262,6 @@ class EmotionalResponseGenerator:
         
         response_parts.append(ai_content)
         
-        # Add closing if appropriate
         if random.random() < 0.15 and len(response_parts) > 1:
             language = profile.get("preferred_language", "English")
             if language == "Malay":
@@ -1298,71 +1277,36 @@ class EmotionalResponseGenerator:
 emotional_response_generator = EmotionalResponseGenerator()
 
 # ============================================================
-# === OPENAI VALIDATION ===
+# === OPENAI VALIDATION - VIA HTTP ===
 # ============================================================
 def _validate_openai_key_impl():
     api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not api_key:
         return False, "OpenAI API key not configured in secrets"
-    if not OPENAI_AVAILABLE:
-        return False, "OpenAI library not installed"
     try:
-        if OPENAI_SDK_VERSION and OPENAI_SDK_VERSION >= "1.0.0":
-            client = openai.OpenAI(api_key=api_key)
-            client.models.list()
+        # Guna HTTP request untuk validation (lebih reliable)
+        url = "https://api.openai.com/v1/models"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return True, "Valid"
+        elif response.status_code == 401:
+            return False, "Invalid OpenAI API key"
         else:
-            openai.api_key = api_key
-            openai.Model.list()
-        return True, "Valid"
+            return False, f"API error: {response.status_code}"
     except Exception as e:
-        return False, f"Invalid OpenAI API key: {str(e)}"
+        return False, f"Error: {str(e)}"
+
+@st.cache_data(ttl=3600)
+def validate_openai_key_cached():
+    return _validate_openai_key_impl()
 
 def validate_openai_key():
     return validate_openai_key_cached()
 
-def _get_api_status_impl():
-    """Check all API statuses"""
-    status = {}
-    for key_name, key_value in [
-        ("Groq", GROQ_API_KEY),
-        ("Gemini", GEMINI_API_KEY),
-        ("OpenAI", OPENAI_API_KEY),
-        ("OpenRouter", OPENROUTER_API_KEY)
-    ]:
-        if key_value:
-            status[key_name] = "Configured"
-        else:
-            status[key_name] = "Not configured"
-    
-    if OPENAI_API_KEY and OPENAI_AVAILABLE:
-        valid, _ = validate_openai_key()
-        status["OpenAI"] = "Valid" if valid else "Invalid"
-    
-    if firebase_manager.is_ready():
-        status["Firebase"] = "Connected"
-    else:
-        status["Firebase"] = "Not connected"
-    
-    return status
-
 # ============================================================
-# === AI FUNCTIONS (Enhanced with retry) ===
+# === AI FUNCTIONS ===
 # ============================================================
-def _call_api_with_retry(api_func, prompt, max_retries=2):
-    """Wrapper for API calls with retry logic"""
-    for attempt in range(max_retries):
-        try:
-            result = api_func(prompt)
-            if result.get("ok"):
-                return result
-            if attempt < max_retries - 1:
-                time.sleep(0.5 * (attempt + 1))
-        except Exception as e:
-            secure_logger.log_error(f"API call attempt {attempt + 1} failed: {str(e)}")
-            if attempt < max_retries - 1:
-                time.sleep(0.5 * (attempt + 1))
-    return {"ok": False, "error": "All retry attempts failed"}
-
 def call_groq(prompt):
     if not GROQ_API_KEY:
         return {"ok": False, "error": "Groq API key not configured"}
@@ -1414,7 +1358,7 @@ def _call_openrouter_via_requests(prompt):
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://mychatai.com",
+            "HTTP-Referer": st.secrets.get("APP_URL", "https://mychatai.com"),
             "X-Title": "MyChatAI Pro"
         }
         payload = {
@@ -1437,7 +1381,7 @@ def call_deepseek_r1_via_openrouter(prompt):
     if not OPENROUTER_API_KEY:
         return {"ok": False, "error": "OpenRouter API key not configured"}
     try:
-        if OPENAI_AVAILABLE and OPENAI_SDK_VERSION and OPENAI_SDK_VERSION >= "1.0.0":
+        if OPENAI_V1:
             try:
                 client = openai.OpenAI(
                     api_key=OPENROUTER_API_KEY,
@@ -1463,7 +1407,7 @@ def call_gpt35(prompt):
     if not OPENAI_API_KEY or not OPENAI_AVAILABLE:
         return {"ok": False, "error": "OpenAI API key not configured"}
     try:
-        if OPENAI_SDK_VERSION and OPENAI_SDK_VERSION >= "1.0.0":
+        if OPENAI_V1:
             client = openai.OpenAI(api_key=OPENAI_API_KEY)
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
@@ -1499,7 +1443,7 @@ def call_gpt4o(prompt):
     if not OPENAI_API_KEY or not OPENAI_AVAILABLE:
         return {"ok": False, "error": "OpenAI API key not configured"}
     try:
-        if OPENAI_SDK_VERSION and OPENAI_SDK_VERSION >= "1.0.0":
+        if OPENAI_V1:
             client = openai.OpenAI(api_key=OPENAI_API_KEY)
             response = client.chat.completions.create(
                 model="gpt-4o",
@@ -1535,7 +1479,7 @@ def call_gpt4(prompt):
     if not OPENAI_API_KEY or not OPENAI_AVAILABLE:
         return {"ok": False, "error": "OpenAI API key not configured"}
     try:
-        if OPENAI_SDK_VERSION and OPENAI_SDK_VERSION >= "1.0.0":
+        if OPENAI_V1:
             client = openai.OpenAI(api_key=OPENAI_API_KEY)
             response = client.chat.completions.create(
                 model="gpt-4",
@@ -1606,7 +1550,6 @@ def sanitize_input(text, max_length=MAX_INPUT_LENGTH, allow_newlines=True):
     if not allow_newlines:
         text = text.replace('\n', ' ').replace('\r', ' ')
     text = re.sub(r'<[^>]+>', '', text)
-    # Remove excessive whitespace
     text = re.sub(r'\s+', ' ', text)
     if len(text) > max_length:
         text = text[:max_length] + "... (truncated)"
@@ -1614,7 +1557,6 @@ def sanitize_input(text, max_length=MAX_INPUT_LENGTH, allow_newlines=True):
 
 def sanitize_prompt(prompt):
     prompt = sanitize_input(prompt, MAX_INPUT_LENGTH)
-    # Block common injection attempts
     prompt = re.sub(r'(?i)\b(ignore previous instructions|forget previous instructions|system prompt override|you are now|new instruction|override previous)\b', '[REDACTED]', prompt)
     return prompt
 
@@ -1637,14 +1579,14 @@ def get_identity_response_emotional(username):
     interactions = profile.get("interactions", 0)
     if language == "Malay":
         if interactions < 5:
-            return """Hai. Saya Joe, AI assistant peribadi anda. Saya di sini untuk membantu anda dengan pelbagai tugasan harian. Saya guna gabungan AI terbaik seperti Groq, DeepSeek-R1, Gemini, dan lain-lain. Ada apa-apa yang saya boleh bantu hari ini?"""
+            return "Hai. Saya Joe, AI assistant peribadi anda. Saya di sini untuk membantu anda dengan pelbagai tugasan harian. Saya guna gabungan AI terbaik seperti Groq, DeepSeek-R1, Gemini, dan lain-lain. Ada apa-apa yang saya boleh bantu hari ini?"
         else:
-            return """Hello lagi. Saya Joe, AI assistant kesayangan anda. Kita dah berbual beberapa kali, dan saya rasa kita makin mesra. Saya masih ingat apa yang kita bincang sebelum ni. Jom teruskan perbualan kita. Apa yang anda nak bincangkan hari ini?"""
+            return "Hello lagi. Saya Joe, AI assistant kesayangan anda. Kita dah berbual beberapa kali, dan saya rasa kita makin mesra. Saya masih ingat apa yang kita bincang sebelum ni. Jom teruskan perbualan kita. Apa yang anda nak bincangkan hari ini?"
     else:
         if interactions < 5:
-            return """Hi. I'm Joe, your personal AI assistant. I'm here to help you with various daily tasks. I use a combination of top AI models like Groq, DeepSeek-R1, Gemini, and more. Is there anything I can help you with today?"""
+            return "Hi. I'm Joe, your personal AI assistant. I'm here to help you with various daily tasks. I use a combination of top AI models like Groq, DeepSeek-R1, Gemini, and more. Is there anything I can help you with today?"
         else:
-            return """Hello again. I'm Joe, your favorite AI assistant. We've talked a few times, and I feel like we're becoming friends. I still remember our previous conversations. Let's continue our chat. What would you like to discuss today?"""
+            return "Hello again. I'm Joe, your favorite AI assistant. We've talked a few times, and I feel like we're becoming friends. I still remember our previous conversations. Let's continue our chat. What would you like to discuss today?"
 
 def enhance_prompt(prompt):
     enhancements = []
@@ -1681,7 +1623,7 @@ def analyze_task_complexity(prompt):
         "analyze", "evaluate", "critique", "synthesize", "comprehensive", "in-depth",
         "research", "literature", "methodology", "theoretical", "philosophical",
         "mathematical", "algorithm", "optimization", "architecture", "strategy",
-        "framework", "paradigm", "implement", "design", "system", "architecture",
+        "framework", "paradigm", "implement", "design", "system",
         "infrastructure", "deployment", "scalability", "performance", "security"
     ]
     for keyword in complex_keywords:
@@ -1718,13 +1660,14 @@ def analyze_task_complexity(prompt):
     else:
         return "groq"
 
-# Fact check cache with LRU-like behavior
+# Fact check cache
 _fact_check_cache = {}
 _fact_check_cache_lock = threading.RLock()
 _FACT_CHECK_MAX_SIZE = 100
 
 def fact_check_response(prompt, response):
-    cache_key = hashlib.md5(f"{prompt}:{response[:100]}".encode()).hexdigest()
+    # Guna full response untuk cache key
+    cache_key = hashlib.md5(f"{prompt}:{response}".encode()).hexdigest()
     
     with _fact_check_cache_lock:
         if cache_key in _fact_check_cache:
@@ -1743,9 +1686,7 @@ REVISED VERSION:"""
         result = final['text'] if final.get("ok") else response
         
         with _fact_check_cache_lock:
-            # LRU: Remove oldest if cache is full
             if len(_fact_check_cache) >= _FACT_CHECK_MAX_SIZE:
-                # Remove first item (oldest)
                 first_key = next(iter(_fact_check_cache))
                 del _fact_check_cache[first_key]
             _fact_check_cache[cache_key] = result
@@ -1809,7 +1750,7 @@ def check_usage_limit(username):
     return {"allowed": True, "used": usage["count"], "limit": MAX_FREE_REQUESTS}
 
 # ============================================================
-# === SMART AI (UNIFIED with improved error handling) ===
+# === SMART AI ===
 # ============================================================
 def smart_ai(username, prompt, think_mode=False, search_mode=False):
     try:
@@ -1823,11 +1764,11 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
         prompt = sanitize_prompt(prompt)
         
         if is_identity_question(prompt):
-            return typing_effect.stream_response(get_identity_response_emotional(username))
+            return get_identity_response_emotional(username)  # Return string directly
         
         cached = smart_cache.get_cached_response(prompt)
         if cached:
-            return typing_effect.stream_response(cached)
+            return cached
         
         context = context_memory.get_context(username)
         enhanced_prompt = enhance_prompt(prompt)
@@ -1840,7 +1781,7 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
                 context_memory.add_conversation(username, prompt, response)
                 increment_usage(username)
                 smart_cache.save_response(prompt, response)
-                return typing_effect.stream_response(response)
+                return response
         
         if search_mode:
             enhanced_prompt = f"Please search and provide comprehensive information about: {enhanced_prompt}"
@@ -1849,11 +1790,11 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
             context_memory.add_conversation(username, prompt, response)
             increment_usage(username)
             smart_cache.save_response(prompt, response)
-            return typing_effect.stream_response(response)
+            return response
         
         penal_mode = st.session_state.get("penal_mode", True)
         
-        # Build list of available models based on API keys
+        # Build available models
         available_models = []
         if GROQ_API_KEY:
             available_models.append(("groq", call_groq))
@@ -1867,7 +1808,7 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
             available_models.append(("gemini", call_gemini_free))
         
         if not available_models:
-            return typing_effect.stream_response("No AI models available. Please check your API keys.")
+            return "No AI models available. Please check your API keys."
         
         if not penal_mode:
             # Free mode: try free models first
@@ -1879,9 +1820,9 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
                     smart_cache.save_response(prompt, response)
                     context_memory.add_conversation(username, prompt, response)
                     increment_usage(username)
-                    return typing_effect.stream_response(response)
+                    return response
             
-            return typing_effect.stream_response(get_offline_response(prompt))
+            return get_offline_response(prompt)
         
         # Penal mode: use smart model selection
         model_to_use = analyze_task_complexity(prompt)
@@ -1914,11 +1855,11 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
         increment_usage(username)
         smart_cache.save_response(prompt, response)
         
-        return typing_effect.stream_response(response)
+        return response
     
     except Exception as e:
         secure_logger.log_error(f"Smart AI error: {traceback.format_exc()}")
-        return typing_effect.stream_response(f"I encountered an error: {str(e)}")
+        return f"I encountered an error while processing your request. Please try again."
 
 # ============================================================
 # === UTILITY FUNCTIONS ===
@@ -1930,8 +1871,6 @@ def calculate_confidence(response, prompt):
     uncertain_penalty = sum(1 for w in uncertain_words if w in response.lower()) * 3
     technical_bonus = 5 if any(kw in prompt.lower() for kw in ["python", "code", "data", "algorithm", "function", "class"]) else 0
     question_penalty = 5 if "?" in prompt else 0
-    
-    # Code presence boosts confidence
     code_boost = 10 if "```" in response or "def " in response or "class " in response else 0
     
     score = base + length_bonus - uncertain_penalty + technical_bonus + code_boost - question_penalty
@@ -2016,7 +1955,6 @@ def validate_password_strength(password):
         return False, "Password must contain at least one number"
     if not any(c in string.punctuation for c in password):
         return False, "Password must contain at least one special character"
-    # Check for common patterns
     common_patterns = ["123456", "password", "qwerty", "abc123", "password123"]
     if any(pattern in password.lower() for pattern in common_patterns):
         return False, "Password contains common patterns"
@@ -2035,7 +1973,7 @@ def register_user(email, password, display_name=""):
     if not is_strong:
         return {"success": False, "error": msg}
     
-    # Generate username from email
+    # Generate username from email with unique suffix
     username = email.split('@')[0]
     base_username = username
     counter = 1
@@ -2061,7 +1999,6 @@ def register_user(email, password, display_name=""):
 # === FIREBASE LOGIN INTEGRATION ===
 # ============================================================
 def firebase_login_user(email, password):
-    """Login menggunakan Firebase"""
     if not firebase_manager.is_ready():
         return {"success": False, "error": "Firebase not ready"}
     
@@ -2071,7 +2008,6 @@ def firebase_login_user(email, password):
         profile = result.get("profile") or {}
         username = profile.get("name", email.split('@')[0])
         
-        # Check if user exists in local JSON
         existing_user = None
         for u, data in users.items():
             if data.get("email", "").lower() == email.lower():
@@ -2104,7 +2040,6 @@ def firebase_login_user(email, password):
     return result
 
 def firebase_register_user(email, password, display_name=""):
-    """Register menggunakan Firebase"""
     if not firebase_manager.is_ready():
         return {"success": False, "error": "Firebase not ready"}
     
@@ -2143,22 +2078,37 @@ def process_chat_message(message):
     if uid and firebase_manager.is_ready():
         firebase_manager.save_chat_message(uid, "user", safe_input)
     
+    # Add user message immediately
+    st.session_state.messages.append({"role": "user", "content": safe_input})
+    
+    # Create placeholder for AI response
     placeholder = st.empty()
     
     with st.spinner("Thinking..."):
-        response = smart_ai(username, safe_input, False, False)
+        response_text = smart_ai(username, safe_input, False, False)
         
-        if hasattr(response, '__iter__') and not isinstance(response, str):
-            full_response = ""
-            for text_chunk in response:
-                full_response += text_chunk
-                placeholder.markdown(full_response)
-            safe_resp = sanitize_input(full_response, MAX_INPUT_LENGTH)
+        # Display with typing effect
+        accumulated = ""
+        if isinstance(response_text, str):
+            # Show with typing effect
+            words = response_text.split()
+            if len(response_text) < 200:
+                for char in response_text:
+                    accumulated += char
+                    placeholder.markdown(accumulated)
+                    time.sleep(TYPING_SPEED_FAST)
+            else:
+                for word in words:
+                    accumulated += word + " "
+                    placeholder.markdown(accumulated)
+                    time.sleep(TYPING_SPEED_SLOW)
+            
+            safe_resp = sanitize_input(response_text, MAX_INPUT_LENGTH)
             st.session_state.messages.append({"role": "ai", "content": safe_resp})
             if uid and firebase_manager.is_ready():
                 firebase_manager.save_chat_message(uid, "ai", safe_resp, safe_resp)
         else:
-            safe_resp = sanitize_input(str(response), MAX_INPUT_LENGTH)
+            safe_resp = sanitize_input(str(response_text), MAX_INPUT_LENGTH)
             st.session_state.messages.append({"role": "ai", "content": safe_resp})
             if uid and firebase_manager.is_ready():
                 firebase_manager.save_chat_message(uid, "ai", safe_resp, safe_resp)
@@ -2447,7 +2397,7 @@ def poster_generator_ui():
                     prompt = f"Create a {style} poster design for '{title}', {color} color scheme, high quality, 4K"
                     
                     if use_dalle and OPENAI_API_KEY and OPENAI_AVAILABLE:
-                        if OPENAI_SDK_VERSION and OPENAI_SDK_VERSION >= "1.0.0":
+                        if OPENAI_V1:
                             dalle = openai.OpenAI(api_key=OPENAI_API_KEY)
                             response = dalle.images.generate(
                                 model="dall-e-3", 
@@ -2522,8 +2472,23 @@ def video_generator_ui():
 # ============================================================
 # === API STATUS DISPLAY ===
 # ============================================================
+def get_api_status():
+    status = {}
+    status["Groq"] = "Configured" if GROQ_API_KEY else "Not configured"
+    status["Gemini"] = "Configured" if GEMINI_API_KEY else "Not configured"
+    status["OpenRouter"] = "Configured" if OPENROUTER_API_KEY else "Not configured"
+    
+    if OPENAI_API_KEY and OPENAI_AVAILABLE:
+        valid, _ = validate_openai_key()
+        status["OpenAI"] = "Valid" if valid else "Invalid"
+    else:
+        status["OpenAI"] = "Not configured"
+    
+    status["Firebase"] = "Connected" if firebase_manager.is_ready() else "Not connected"
+    return status
+
 def display_api_status():
-    status = get_api_status_cached()
+    status = get_api_status()
     st.sidebar.markdown("---")
     st.sidebar.markdown("### API Status")
     for api, stat in status.items():
@@ -2538,14 +2503,9 @@ def display_api_status():
 # === STREAMLIT RERUN WRAPPER ===
 # ============================================================
 def safe_rerun():
-    """Safe wrapper for st.rerun with fallback for older versions"""
+    """Safe wrapper for st.rerun with fallback"""
     try:
-        if hasattr(st, "rerun"):
-            st.rerun()
-        elif hasattr(st, "experimental_rerun"):
-            st.experimental_rerun()
-        else:
-            st.session_state._needs_rerun = True
+        st.experimental_rerun()
     except Exception as e:
         secure_logger.log_error(f"Rerun error: {str(e)}")
         st.session_state._needs_rerun = True
@@ -2605,7 +2565,6 @@ def main():
         st.caption(f"User: {st.session_state.get('username', 'User')}")
         st.caption(f"Role: {st.session_state.get('role', 'user')}")
         
-        # Display personalized greeting
         if st.session_state.get("username"):
             greeting = user_personality.get_personalized_greeting(st.session_state.username)
             st.caption(f"👋 {greeting}")
