@@ -1,3 +1,6 @@
+# app.py - MyChatAI Pro v70.9 (FINAL - TANPA PYREBASE)
+# ============================================================
+
 import streamlit as st
 import datetime
 import json
@@ -30,7 +33,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # ============================================================
 # === VERSION ===
 # ============================================================
-APP_VERSION = "v70.8"
+APP_VERSION = "v70.9"
 APP_NAME = "MyChatAI Pro"
 
 # ============================================================
@@ -70,7 +73,6 @@ class SecureLogger:
             r'hf_[a-zA-Z0-9]+',
             r'sess_[a-zA-Z0-9]+',
         ]
-        # Jangan redact email untuk debug
         self.redact_email = False
 
     def sanitize_log(self, message):
@@ -78,7 +80,6 @@ class SecureLogger:
             return message
         for pattern in self.sensitive_patterns:
             message = re.sub(pattern, '[REDACTED]', str(message), flags=re.IGNORECASE)
-        # Optional: redact email if enabled
         if self.redact_email:
             message = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '[EMAIL]', message)
         return message
@@ -102,7 +103,7 @@ secure_logger = SecureLogger()
 # ============================================================
 st.set_page_config(
     page_title=f"{APP_NAME} {APP_VERSION}",
-    page_icon="🤖",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -127,7 +128,7 @@ CONVERSATION_FLOW_FILE = "conversation_flows.json"
 USER_PERSONALITY_FILE = "user_personalities.json"
 CONTEXT_MEMORY_FILE = "context_memory.json"
 DEFAULT_AVATAR = "https://ui-avatars.com/api/?name=User&background=4d6bfe&color=fff&size=40"
-SESSION_TIMEOUT = 31536000  # 1 year
+SESSION_TIMEOUT = 31536000
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 
@@ -275,7 +276,6 @@ def check_rate_limit(username, limit=30, window=60):
         if username not in _rate_limit_cache:
             _rate_limit_cache[username] = []
         
-        # Clean old entries
         _rate_limit_cache[username] = [t for t in _rate_limit_cache[username] if now - t < window]
         
         if len(_rate_limit_cache[username]) >= limit:
@@ -429,7 +429,6 @@ class TypingEffect:
         self._is_streaming = False
 
     def stream_response(self, text, placeholder=None):
-        """Stream response with typing effect"""
         if not text:
             yield ""
             return
@@ -444,7 +443,6 @@ class TypingEffect:
             accumulated = ""
             
             if len(text) < 200:
-                # Character by character for short texts
                 for char in text:
                     if not self._is_streaming:
                         break
@@ -453,7 +451,6 @@ class TypingEffect:
                     time.sleep(TYPING_SPEED_FAST)
                 yield accumulated
             else:
-                # Word by word for longer texts
                 for word in words:
                     if not self._is_streaming:
                         break
@@ -489,7 +486,6 @@ class ContextMemory:
         if username not in self.memory:
             self.memory[username] = []
         
-        # Truncate long entries
         truncated_question = question[:300] if len(question) > 300 else question
         truncated_answer = answer[:500] if len(answer) > 500 else answer
         
@@ -499,7 +495,6 @@ class ContextMemory:
             "time": datetime.datetime.now().isoformat()
         })
         
-        # Keep only last MAX_HISTORY_PER_USER
         if len(self.memory[username]) > MAX_HISTORY_PER_USER:
             self.memory[username] = self.memory[username][-MAX_HISTORY_PER_USER:]
         
@@ -542,7 +537,6 @@ try:
     OPENAI_AVAILABLE = True
     if hasattr(openai, "__version__"):
         OPENAI_SDK_VERSION = openai.__version__
-        # Safe version check
         ver_parts = OPENAI_SDK_VERSION.split(".")
         if ver_parts and ver_parts[0].isdigit():
             major = int(ver_parts[0])
@@ -561,29 +555,35 @@ except ImportError:
     OPENAI_AVAILABLE = False
     secure_logger.log_warning("OpenAI library not installed")
 
-# Firebase imports
+# ============================================================
+# === FIREBASE IMPORTS - TANPA PYREBASE ===
+# ============================================================
+FIREBASE_AVAILABLE = False
+PYBASE_AVAILABLE = False
+
 try:
     import firebase_admin
     from firebase_admin import credentials, firestore, auth
     FIREBASE_AVAILABLE = True
 except ImportError:
     FIREBASE_AVAILABLE = False
+    secure_logger.log_warning("Firebase admin not installed")
 
-try:
-    import pyrebase
-    PYBASE_AVAILABLE = True
-except ImportError:
-    PYBASE_AVAILABLE = False
+# PYREBASE TIDAK DIGUNAKAN LAGI
+# try:
+#     import pyrebase
+#     PYBASE_AVAILABLE = True
+# except ImportError:
+#     PYBASE_AVAILABLE = False
 
 # ============================================================
-# === FIREBASE MANAGER ===
+# === FIREBASE MANAGER - TANPA PYREBASE ===
 # ============================================================
 class FirebaseManager:
     def __init__(self):
         self.initialized = False
         self.db = None
         self.auth_client = None
-        self.pyrebase_app = None
         self._batch_queue = []
         self._batch_lock = threading.Lock()
         self._init_firebase()
@@ -601,20 +601,6 @@ class FirebaseManager:
                 self.initialized = False
                 return
 
-            firebase_config = {
-                "apiKey": st.secrets.get("FIREBASE_API_KEY"),
-                "authDomain": st.secrets.get("FIREBASE_AUTH_DOMAIN"),
-                "databaseURL": st.secrets.get("FIREBASE_DATABASE_URL"),
-                "projectId": st.secrets.get("FIREBASE_PROJECT_ID"),
-                "storageBucket": st.secrets.get("FIREBASE_STORAGE_BUCKET"),
-                "messagingSenderId": st.secrets.get("FIREBASE_MESSAGING_SENDER_ID"),
-                "appId": st.secrets.get("FIREBASE_APP_ID"),
-                "measurementId": st.secrets.get("FIREBASE_MEASUREMENT_ID")
-            }
-
-            if PYBASE_AVAILABLE:
-                self.pyrebase_app = pyrebase.initialize_app(firebase_config)
-
             if FIREBASE_AVAILABLE:
                 try:
                     firebase_admin.get_app()
@@ -628,9 +614,7 @@ class FirebaseManager:
                                 service_account = service_account_str
                             if service_account and isinstance(service_account, dict):
                                 cred = credentials.Certificate(service_account)
-                                firebase_admin.initialize_app(cred, {
-                                    'projectId': firebase_config['projectId']
-                                })
+                                firebase_admin.initialize_app(cred)
                             else:
                                 secure_logger.log_warning("Invalid service account format")
                                 firebase_admin.initialize_app()
@@ -638,13 +622,17 @@ class FirebaseManager:
                             secure_logger.log_error(f"Service account error: {str(e)}")
                             firebase_admin.initialize_app()
                     else:
+                        # Try to initialize without service account (for Firebase Hosting)
                         firebase_admin.initialize_app()
 
                 self.db = firestore.client()
                 self.auth_client = auth
-
-            self.initialized = True
-            secure_logger.log_info("Firebase initialized successfully!")
+                self.initialized = True
+                secure_logger.log_info("Firebase initialized successfully!")
+            else:
+                secure_logger.log_warning("Firebase admin not available")
+                self.initialized = False
+                
         except Exception as e:
             secure_logger.log_error(f"Firebase init error: {str(e)}")
             self.initialized = False
@@ -677,52 +665,91 @@ class FirebaseManager:
             secure_logger.log_error(f"Batch save error: {str(e)}")
 
     def login_user(self, email, password):
+        """Login using Firebase REST API"""
+        return self._login_via_rest(email, password)
+
+    def _login_via_rest(self, email, password):
+        """Login using Firebase REST API"""
         try:
-            if not self.pyrebase_app:
-                return {"success": False, "error": "Firebase not initialized"}
-            auth = self.pyrebase_app.auth()
-            user = auth.sign_in_with_email_and_password(email, password)
-            profile = self.get_user_profile(user['localId'])
-            return {
-                "success": True,
-                "uid": user['localId'],
+            api_key = st.secrets.get("FIREBASE_API_KEY")
+            if not api_key:
+                return {"success": False, "error": "Firebase API key not configured"}
+            
+            url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={api_key}"
+            payload = {
                 "email": email,
-                "profile": profile,
-                "id_token": user['idToken']
+                "password": password,
+                "returnSecureToken": True
             }
+            response = requests.post(url, json=payload, timeout=API_TIMEOUT)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return {
+                    "success": True,
+                    "uid": data.get("localId"),
+                    "email": data.get("email"),
+                    "id_token": data.get("idToken"),
+                    "refresh_token": data.get("refreshToken")
+                }
+            else:
+                error_data = response.json()
+                error_msg = error_data.get("error", {}).get("message", "Unknown error")
+                return {"success": False, "error": error_msg}
         except Exception as e:
-            error_msg = str(e)
-            if "INVALID_PASSWORD" in error_msg or "EMAIL_NOT_FOUND" in error_msg:
-                return {"success": False, "error": "Invalid email or password"}
-            return {"success": False, "error": error_msg}
+            secure_logger.log_error(f"Firebase login error: {str(e)}")
+            return {"success": False, "error": str(e)}
 
     def register_user(self, email, password, display_name=""):
+        """Register using Firebase REST API"""
         try:
-            if not self.pyrebase_app:
-                return {"success": False, "error": "Firebase not initialized"}
-            auth = self.pyrebase_app.auth()
-            user = auth.create_user_with_email_and_password(email, password)
-            self.save_user_profile(user['localId'], {
+            api_key = st.secrets.get("FIREBASE_API_KEY")
+            if not api_key:
+                return {"success": False, "error": "Firebase API key not configured"}
+            
+            url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={api_key}"
+            payload = {
                 "email": email,
-                "name": display_name or email.split('@')[0],
-                "created_at": datetime.datetime.now().isoformat(),
-                "total_requests": 0,
-                "total_posters": 0,
-                "is_premium": False,
-                "role": "user",
-                "avatar": DEFAULT_AVATAR
-            })
-            return {"success": True, "uid": user['localId'], "email": email}
+                "password": password,
+                "returnSecureToken": True
+            }
+            response = requests.post(url, json=payload, timeout=API_TIMEOUT)
+            
+            if response.status_code == 200:
+                data = response.json()
+                uid = data.get("localId")
+                if uid and self.db:
+                    self.save_user_profile(uid, {
+                        "email": email,
+                        "name": display_name or email.split('@')[0],
+                        "created_at": datetime.datetime.now().isoformat(),
+                        "total_requests": 0,
+                        "total_posters": 0,
+                        "is_premium": False,
+                        "role": "user",
+                        "avatar": DEFAULT_AVATAR
+                    })
+                return {
+                    "success": True,
+                    "uid": uid,
+                    "email": data.get("email")
+                }
+            else:
+                error_data = response.json()
+                error_msg = error_data.get("error", {}).get("message", "Unknown error")
+                if "EMAIL_EXISTS" in error_msg:
+                    return {"success": False, "error": "Email already registered"}
+                elif "WEAK_PASSWORD" in error_msg:
+                    return {"success": False, "error": "Password too weak"}
+                return {"success": False, "error": error_msg}
         except Exception as e:
-            error_msg = str(e)
-            if "EMAIL_EXISTS" in error_msg:
-                return {"success": False, "error": "Email already registered"}
-            elif "WEAK_PASSWORD" in error_msg:
-                return {"success": False, "error": "Password too weak"}
-            return {"success": False, "error": error_msg}
+            secure_logger.log_error(f"Firebase register error: {str(e)}")
+            return {"success": False, "error": str(e)}
 
     def save_user_profile(self, uid, data):
         try:
+            if not self.db:
+                return False
             self.db.collection("users").document(uid).set(data, merge=True)
             return True
         except Exception as e:
@@ -731,6 +758,8 @@ class FirebaseManager:
 
     def get_user_profile(self, uid):
         try:
+            if not self.db:
+                return None
             doc = self.db.collection("users").document(uid).get()
             if doc.exists:
                 data = doc.to_dict()
@@ -744,6 +773,8 @@ class FirebaseManager:
 
     def update_user_profile(self, uid, data):
         try:
+            if not self.db:
+                return False
             self.db.collection("users").document(uid).update(data)
             return True
         except Exception as e:
@@ -776,6 +807,8 @@ class FirebaseManager:
 
     def get_chat_history(self, uid, limit=100):
         try:
+            if not self.db:
+                return []
             docs = (self.db.collection("users")
                     .document(uid)
                     .collection("chats")
@@ -852,7 +885,6 @@ account_lockout = AccountLockout()
 # ============================================================
 def save_session(username):
     try:
-        # Guna experimental_set_query_params untuk keserasian
         st.experimental_set_query_params(
             session=username,
             login_time=str(time.time())
@@ -1026,7 +1058,6 @@ class UserPersonality:
             profile["interactions"] += 1
             profile["last_interaction"] = datetime.datetime.now().isoformat()
             
-            # Detect language preference
             malay_words = ["saya", "awak", "kamu", "aku", "kita", "dan", "atau", "tetapi", "kerana", "jadi", "yang", "dengan", "untuk"]
             english_words = ["i", "you", "we", "they", "and", "or", "but", "because", "so", "the", "with", "for", "this"]
             malay_score = sum(1 for w in malay_words if w in text.lower())
@@ -1037,7 +1068,6 @@ class UserPersonality:
             elif english_score > malay_score:
                 profile["preferred_language"] = "English"
             
-            # Track emotion history
             emotion = emotional_ai.detect_emotion(text)
             if emotion != "neutral":
                 profile["emotions"].append(emotion)
@@ -1281,7 +1311,6 @@ def _validate_openai_key_impl():
     if not api_key:
         return False, "OpenAI API key not configured in secrets"
     try:
-        # Guna HTTP request untuk validation (lebih reliable)
         url = "https://api.openai.com/v1/models"
         headers = {"Authorization": f"Bearer {api_key}"}
         response = requests.get(url, headers=headers, timeout=10)
@@ -1657,13 +1686,11 @@ def analyze_task_complexity(prompt):
     else:
         return "groq"
 
-# Fact check cache
 _fact_check_cache = {}
 _fact_check_cache_lock = threading.RLock()
 _FACT_CHECK_MAX_SIZE = 100
 
 def fact_check_response(prompt, response):
-    # Guna full response untuk cache key
     cache_key = hashlib.md5(f"{prompt}:{response}".encode()).hexdigest()
     
     with _fact_check_cache_lock:
@@ -1761,7 +1788,7 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
         prompt = sanitize_prompt(prompt)
         
         if is_identity_question(prompt):
-            return get_identity_response_emotional(username)  # Return string directly
+            return get_identity_response_emotional(username)
         
         cached = smart_cache.get_cached_response(prompt)
         if cached:
@@ -1791,7 +1818,6 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
         
         penal_mode = st.session_state.get("penal_mode", True)
         
-        # Build available models
         available_models = []
         if GROQ_API_KEY:
             available_models.append(("groq", call_groq))
@@ -1808,7 +1834,6 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
             return "No AI models available. Please check your API keys."
         
         if not penal_mode:
-            # Free mode: try free models first
             free_models = [m for m in available_models if m[0] in ["groq", "gemini", "deepseek"]]
             for model_name, model_func in free_models:
                 result = model_func(enhanced_prompt)
@@ -1821,11 +1846,9 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
             
             return get_offline_response(prompt)
         
-        # Penal mode: use smart model selection
         model_to_use = analyze_task_complexity(prompt)
         response = None
         
-        # Try selected model first
         for model_name, model_func in available_models:
             if model_name == model_to_use:
                 result = model_func(enhanced_prompt)
@@ -1833,7 +1856,6 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
                     response = result["text"]
                     break
         
-        # If selected model fails, try others in order
         if not response:
             for model_name, model_func in available_models:
                 if model_name != model_to_use:
@@ -1917,7 +1939,6 @@ def analyze_response(response):
 def login_user(username, password):
     users = load_users()
     
-    # Support login with email
     if "@" in username and username not in users:
         for u, data in users.items():
             if data.get("email", "").lower() == username.lower():
@@ -1960,17 +1981,14 @@ def validate_password_strength(password):
 def register_user(email, password, display_name=""):
     users = load_users()
     
-    # Check if email already registered
     for u, data in users.items():
         if data.get("email", "").lower() == email.lower():
             return {"success": False, "error": "Email already registered"}
     
-    # Validate password strength
     is_strong, msg = validate_password_strength(password)
     if not is_strong:
         return {"success": False, "error": msg}
     
-    # Generate username from email with unique suffix
     username = email.split('@')[0]
     base_username = username
     counter = 1
@@ -2075,19 +2093,15 @@ def process_chat_message(message):
     if uid and firebase_manager.is_ready():
         firebase_manager.save_chat_message(uid, "user", safe_input)
     
-    # Add user message immediately
     st.session_state.messages.append({"role": "user", "content": safe_input})
     
-    # Create placeholder for AI response
     placeholder = st.empty()
     
     with st.spinner("Thinking..."):
         response_text = smart_ai(username, safe_input, False, False)
         
-        # Display with typing effect
         accumulated = ""
         if isinstance(response_text, str):
-            # Show with typing effect
             words = response_text.split()
             if len(response_text) < 200:
                 for char in response_text:
