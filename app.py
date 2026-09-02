@@ -103,7 +103,7 @@ secure_logger = SecureLogger()
 # ============================================================
 st.set_page_config(
     page_title=f"{APP_NAME} {APP_VERSION}",
-    page_icon="🤖",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
