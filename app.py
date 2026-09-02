@@ -1,4 +1,4 @@
-# app.py - MyChatAI Pro v70.9 (FINAL - TANPA PYREBASE)
+# app.py - MyChatAI Pro v71.1 (FINAL - TANPA PYREBASE)
 # ============================================================
 
 import streamlit as st
@@ -33,7 +33,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # ============================================================
 # === VERSION ===
 # ============================================================
-APP_VERSION = "v70.9"
+APP_VERSION = "v71.1"
 APP_NAME = "MyChatAI Pro"
 
 # ============================================================
@@ -103,7 +103,7 @@ secure_logger = SecureLogger()
 # ============================================================
 st.set_page_config(
     page_title=f"{APP_NAME} {APP_VERSION}",
-    page_icon="",
+    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -569,7 +569,7 @@ except ImportError:
     FIREBASE_AVAILABLE = False
     secure_logger.log_warning("Firebase admin not installed")
 
-# PYREBASE TIDAK DIGUNAKAN LAGI
+# PYREBASE TIDAK DIGUNAKAN - BUANG
 # try:
 #     import pyrebase
 #     PYBASE_AVAILABLE = True
@@ -577,7 +577,7 @@ except ImportError:
 #     PYBASE_AVAILABLE = False
 
 # ============================================================
-# === FIREBASE MANAGER - TANPA PYREBASE ===
+# === FIREBASE MANAGER - GUNA REST API (TANPA PYREBASE) ===
 # ============================================================
 class FirebaseManager:
     def __init__(self):
@@ -590,17 +590,22 @@ class FirebaseManager:
 
     def _init_firebase(self):
         try:
+            secure_logger.log_info("Initializing Firebase...")
+            
+            # Check Firebase config
             required_keys = ["FIREBASE_API_KEY", "FIREBASE_AUTH_DOMAIN", "FIREBASE_PROJECT_ID"]
             missing_keys = []
             for key in required_keys:
                 if not st.secrets.get(key):
                     missing_keys.append(key)
+                    secure_logger.log_warning(f"Missing Firebase config: {key}")
 
             if missing_keys:
-                secure_logger.log_warning(f"Missing Firebase config: {missing_keys}")
+                secure_logger.log_error(f"Missing Firebase config: {missing_keys}")
                 self.initialized = False
                 return
 
+            # Initialize Firebase Admin for Firestore
             if FIREBASE_AVAILABLE:
                 try:
                     firebase_admin.get_app()
@@ -615,6 +620,7 @@ class FirebaseManager:
                             if service_account and isinstance(service_account, dict):
                                 cred = credentials.Certificate(service_account)
                                 firebase_admin.initialize_app(cred)
+                                secure_logger.log_info("Firebase Admin initialized with service account")
                             else:
                                 secure_logger.log_warning("Invalid service account format")
                                 firebase_admin.initialize_app()
@@ -622,19 +628,21 @@ class FirebaseManager:
                             secure_logger.log_error(f"Service account error: {str(e)}")
                             firebase_admin.initialize_app()
                     else:
-                        # Try to initialize without service account (for Firebase Hosting)
                         firebase_admin.initialize_app()
+                        secure_logger.log_info("Firebase Admin initialized without service account")
 
-                self.db = firestore.client()
-                self.auth_client = auth
-                self.initialized = True
-                secure_logger.log_info("Firebase initialized successfully!")
-            else:
-                secure_logger.log_warning("Firebase admin not available")
-                self.initialized = False
-                
+                    self.db = firestore.client()
+                    self.auth_client = auth
+                    secure_logger.log_info("Firestore client initialized")
+                except Exception as e:
+                    secure_logger.log_error(f"Firebase Admin init error: {str(e)}")
+
+            self.initialized = True
+            secure_logger.log_info("Firebase initialized successfully!")
+            
         except Exception as e:
             secure_logger.log_error(f"Firebase init error: {str(e)}")
+            secure_logger.log_error(traceback.format_exc())
             self.initialized = False
 
     def is_ready(self):
@@ -664,16 +672,15 @@ class FirebaseManager:
         except Exception as e:
             secure_logger.log_error(f"Batch save error: {str(e)}")
 
-    def login_user(self, email, password):
-        """Login using Firebase REST API"""
-        return self._login_via_rest(email, password)
-
     def _login_via_rest(self, email, password):
-        """Login using Firebase REST API"""
+        """Login using Firebase REST API - NO PYREBASE"""
         try:
             api_key = st.secrets.get("FIREBASE_API_KEY")
             if not api_key:
                 return {"success": False, "error": "Firebase API key not configured"}
+            
+            email = email.strip().lower()
+            secure_logger.log_info(f"Attempting login via REST for: {email}")
             
             url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={api_key}"
             payload = {
@@ -685,27 +692,47 @@ class FirebaseManager:
             
             if response.status_code == 200:
                 data = response.json()
+                secure_logger.log_info(f"Login successful via REST for: {email}")
+                
+                # Get user profile from Firestore
+                profile = self.get_user_profile(data.get("localId"))
+                
                 return {
                     "success": True,
                     "uid": data.get("localId"),
                     "email": data.get("email"),
-                    "id_token": data.get("idToken"),
-                    "refresh_token": data.get("refreshToken")
+                    "profile": profile,
+                    "id_token": data.get("idToken")
                 }
             else:
                 error_data = response.json()
                 error_msg = error_data.get("error", {}).get("message", "Unknown error")
-                return {"success": False, "error": error_msg}
+                secure_logger.log_error(f"Login REST error: {error_msg}")
+                
+                if "EMAIL_NOT_FOUND" in error_msg:
+                    return {"success": False, "error": "Email not found. Please register first."}
+                elif "INVALID_PASSWORD" in error_msg:
+                    return {"success": False, "error": "Invalid password. Please try again."}
+                elif "USER_DISABLED" in error_msg:
+                    return {"success": False, "error": "Account disabled. Contact support."}
+                elif "TOO_MANY_ATTEMPTS" in error_msg:
+                    return {"success": False, "error": "Too many failed attempts. Please try later."}
+                else:
+                    return {"success": False, "error": f"Login failed: {error_msg}"}
         except Exception as e:
-            secure_logger.log_error(f"Firebase login error: {str(e)}")
-            return {"success": False, "error": str(e)}
+            secure_logger.log_error(f"Login REST error: {str(e)}")
+            secure_logger.log_error(traceback.format_exc())
+            return {"success": False, "error": f"Login error: {str(e)}"}
 
-    def register_user(self, email, password, display_name=""):
-        """Register using Firebase REST API"""
+    def _register_via_rest(self, email, password, display_name=""):
+        """Register using Firebase REST API - NO PYREBASE"""
         try:
             api_key = st.secrets.get("FIREBASE_API_KEY")
             if not api_key:
                 return {"success": False, "error": "Firebase API key not configured"}
+            
+            email = email.strip().lower()
+            secure_logger.log_info(f"Attempting register via REST for: {email}")
             
             url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={api_key}"
             payload = {
@@ -717,6 +744,8 @@ class FirebaseManager:
             
             if response.status_code == 200:
                 data = response.json()
+                secure_logger.log_info(f"Register successful via REST for: {email}")
+                
                 uid = data.get("localId")
                 if uid and self.db:
                     self.save_user_profile(uid, {
@@ -729,6 +758,7 @@ class FirebaseManager:
                         "role": "user",
                         "avatar": DEFAULT_AVATAR
                     })
+                
                 return {
                     "success": True,
                     "uid": uid,
@@ -737,14 +767,28 @@ class FirebaseManager:
             else:
                 error_data = response.json()
                 error_msg = error_data.get("error", {}).get("message", "Unknown error")
+                secure_logger.log_error(f"Register REST error: {error_msg}")
+                
                 if "EMAIL_EXISTS" in error_msg:
-                    return {"success": False, "error": "Email already registered"}
+                    return {"success": False, "error": "Email already registered. Please login."}
                 elif "WEAK_PASSWORD" in error_msg:
-                    return {"success": False, "error": "Password too weak"}
-                return {"success": False, "error": error_msg}
+                    return {"success": False, "error": "Password too weak. Use at least 8 chars with numbers and symbols."}
+                elif "INVALID_EMAIL" in error_msg:
+                    return {"success": False, "error": "Invalid email format. Please check."}
+                else:
+                    return {"success": False, "error": f"Registration failed: {error_msg}"}
         except Exception as e:
-            secure_logger.log_error(f"Firebase register error: {str(e)}")
-            return {"success": False, "error": str(e)}
+            secure_logger.log_error(f"Register REST error: {str(e)}")
+            secure_logger.log_error(traceback.format_exc())
+            return {"success": False, "error": f"Registration error: {str(e)}"}
+
+    def login_user(self, email, password):
+        """Login - using REST API (no pyrebase)"""
+        return self._login_via_rest(email, password)
+
+    def register_user(self, email, password, display_name=""):
+        """Register - using REST API (no pyrebase)"""
+        return self._register_via_rest(email, password, display_name)
 
     def save_user_profile(self, uid, data):
         try:
@@ -824,6 +868,34 @@ class FirebaseManager:
         except Exception as e:
             secure_logger.log_error(f"Get chat error: {str(e)}")
             return []
+
+    def increment_usage(self, uid):
+        try:
+            if not self.db:
+                return False
+            self.db.collection("users").document(uid).update({
+                "total_requests": firestore.Increment(1),
+                "last_active": datetime.datetime.now().isoformat()
+            })
+            return True
+        except Exception as e:
+            secure_logger.log_error(f"Increment usage error: {str(e)}")
+            return False
+
+    def log_activity(self, uid, action, metadata=None):
+        try:
+            if not self.db:
+                return False
+            self.db.collection("analytics").add({
+                "uid": uid,
+                "action": action,
+                "metadata": metadata or {},
+                "timestamp": datetime.datetime.now().isoformat()
+            })
+            return True
+        except Exception as e:
+            secure_logger.log_error(f"Log activity error: {str(e)}")
+            return False
 
 firebase_manager = FirebaseManager()
 
@@ -1936,6 +2008,11 @@ def analyze_response(response):
 # ============================================================
 # === LOGIN FUNCTIONS ===
 # ============================================================
+def validate_email(email):
+    """Validate email format"""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+
 def login_user(username, password):
     users = load_users()
     
@@ -2081,6 +2158,96 @@ def firebase_register_user(email, password, display_name=""):
         return {"success": True, "username": username}
     
     return result
+
+# ============================================================
+# === LOGIN UI (DIPERBAIKI) ===
+# ============================================================
+def login_ui():
+    st.markdown("""
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:20px;">
+        <div style="max-width:420px;width:100%;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:16px;padding:40px 32px;">
+            <div style="text-align:center;margin-bottom:30px;">
+                <h1 style="font-size:28px;font-weight:700;color:#e8edf5;letter-spacing:-0.5px;">MyChatAI Pro</h1>
+                <p style="color:#8a8a9a;font-size:14px;margin-top:4px;">6 AI Models</p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        # Login Form
+        with st.form("login_form"):
+            email = st.text_input("Email", placeholder="Enter your email", key="login_email")
+            password = st.text_input("Password", type="password", placeholder="Enter your password", key="login_password")
+            remember_me = st.checkbox("Remember Me", value=True)
+            
+            submitted = st.form_submit_button("Login", use_container_width=True)
+            
+            if submitted:
+                if email and password:
+                    if not validate_email(email):
+                        st.error("Please enter a valid email address")
+                    else:
+                        # Check lockout
+                        is_locked, msg = account_lockout.is_locked_out(email)
+                        if is_locked:
+                            st.error(msg)
+                        else:
+                            # Login using Firebase REST (tanpa pyrebase)
+                            result = firebase_manager.login_user(email, password)
+                            if result["success"]:
+                                st.session_state.logged_in = True
+                                st.session_state.uid = result["uid"]
+                                st.session_state.email = result["email"]
+                                st.session_state.username = result["profile"].get("name", "User") if result["profile"] else "User"
+                                st.session_state.role = result["profile"].get("role", "user") if result["profile"] else "user"
+                                st.session_state.messages = []
+                                
+                                if remember_me:
+                                    save_session(result["uid"])
+                                
+                                firebase_manager.increment_usage(result["uid"])
+                                firebase_manager.log_activity(result["uid"], "login")
+                                st.success("Login successful!")
+                                st.rerun()
+                            else:
+                                # Record failed attempt
+                                account_lockout.record_failed_attempt(email)
+                                remaining = account_lockout.get_remaining_attempts(email)
+                                st.error(f"{result.get('error', 'Login failed')} ({remaining} attempts remaining)")
+                else:
+                    st.warning("Please enter email and password")
+        
+        st.divider()
+        
+        # Registration
+        with st.expander("Create New Account"):
+            with st.form("register_form"):
+                reg_email = st.text_input("Email", placeholder="Enter your email", key="reg_email")
+                reg_password = st.text_input("Password", type="password", placeholder="Create a password (min 8 chars)", key="reg_password")
+                reg_name = st.text_input("Display Name", placeholder="Your name", key="reg_name")
+                
+                reg_submitted = st.form_submit_button("Register", use_container_width=True)
+                
+                if reg_submitted:
+                    if reg_email and reg_password:
+                        if not validate_email(reg_email):
+                            st.error("Please enter a valid email address")
+                        else:
+                            valid, msg = validate_password_strength(reg_password)
+                            if not valid:
+                                st.error(msg)
+                            else:
+                                with st.spinner("Creating account..."):
+                                    result = firebase_manager.register_user(reg_email, reg_password, reg_name)
+                                    if result["success"]:
+                                        st.success("Account created successfully! Please login.")
+                                        st.balloons()
+                                    else:
+                                        st.error(result.get("error", "Registration failed"))
+                    else:
+                        st.warning("Please fill in all fields")
 
 # ============================================================
 # === CHAT UI ===
@@ -2304,86 +2471,6 @@ def chat_ui():
                 safe_rerun()
 
 # ============================================================
-# === LOGIN UI ===
-# ============================================================
-def login_ui():
-    st.markdown("""
-    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:20px;">
-        <div style="max-width:420px;width:100%;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:16px;padding:40px 32px;">
-            <div style="text-align:center;margin-bottom:30px;">
-                <h1 style="font-size:28px;font-weight:700;color:#e8edf5;letter-spacing:-0.5px;">MyChatAI Pro</h1>
-                <p style="color:#8a8a9a;font-size:14px;margin-top:4px;">6 AI Models</p>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        username_or_email = st.text_input("Username or Email", placeholder="Enter your username or email", key="login_username")
-        password = st.text_input("Password", type="password", placeholder="Enter your password", key="login_password")
-        remember_me = st.checkbox("Remember Me", value=True)
-        
-        use_firebase = st.checkbox("Use Firebase Login", value=firebase_manager.is_ready())
-        
-        if st.button("Login", use_container_width=True, key="login_btn"):
-            if username_or_email and password:
-                if use_firebase and firebase_manager.is_ready():
-                    result = firebase_login_user(username_or_email, password)
-                else:
-                    result = login_user(username_or_email, password)
-                
-                if result["success"]:
-                    st.session_state.logged_in = True
-                    st.session_state.username = result["username"]
-                    st.session_state.uid = result.get("firebase_uid") or result["username"]
-                    st.session_state.role = result.get("role", "user")
-                    users = load_users()
-                    st.session_state.email = users.get(result["username"], {}).get("email", "")
-                    st.session_state.messages = []
-                    st.session_state.session_start = time.time()
-                    st.session_state.session_hash = hashlib.sha256(f"{result['username']}:{_SESSION_SALT}".encode()).hexdigest()
-                    
-                    if remember_me:
-                        save_session(result["username"])
-                    
-                    st.success("Login successful!")
-                    safe_rerun()
-                else:
-                    st.error(result.get("error", "Login failed"))
-            else:
-                st.warning("Please enter username/email and password")
-        
-        st.divider()
-        
-        st.markdown("### Create New Account")
-        reg_email = st.text_input("Email", placeholder="Enter your email", key="reg_email")
-        reg_password = st.text_input("Password", type="password", placeholder="Create a password", key="reg_password")
-        reg_name = st.text_input("Display Name", placeholder="Your name", key="reg_name")
-        
-        use_firebase_reg = st.checkbox("Use Firebase Registration", value=firebase_manager.is_ready(), key="use_firebase_reg")
-        
-        st.caption("Password must be 8+ characters with uppercase, lowercase, number, and special character")
-        
-        if st.button("Register", use_container_width=True, key="register_btn"):
-            if reg_email and reg_password:
-                if "@" not in reg_email:
-                    st.error("Please enter a valid email address")
-                else:
-                    if use_firebase_reg and firebase_manager.is_ready():
-                        result = firebase_register_user(reg_email, reg_password, reg_name)
-                    else:
-                        result = register_user(reg_email, reg_password, reg_name)
-                    
-                    if result["success"]:
-                        st.success("Account created successfully. Please login.")
-                        st.balloons()
-                    else:
-                        st.error(result.get("error", "Registration failed"))
-            else:
-                st.warning("Please fill in all fields")
-
-# ============================================================
 # === POSTER GENERATOR ===
 # ============================================================
 def poster_generator_ui():
@@ -2522,6 +2609,254 @@ def safe_rerun():
         st.session_state._needs_rerun = True
 
 # ============================================================
+# === ADMIN STRATEGY UI ===
+# ============================================================
+def admin_strategy_ui():
+    st.markdown("### Model Strategy Control")
+    
+    if "strategy_config" not in st.session_state:
+        from model_strategy import ModelStrategy
+        st.session_state.strategy_config = ModelStrategy()
+    
+    config = st.session_state.strategy_config
+    
+    # Strategy Presets
+    st.markdown("#### Strategy Presets")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if st.button("Groq Only", use_container_width=True):
+            config.set_strategy("groq_only")
+            for model in ["gpt35", "gpt4o", "gpt4", "gemini", "deepseek_r1"]:
+                config.toggle_model(model, False)
+            config.toggle_model("groq", True)
+            st.success("Groq Only mode activated (100% FREE)")
+            st.rerun()
+    
+    with col2:
+        if st.button("Free Only", use_container_width=True):
+            config.set_strategy("free_only")
+            config.toggle_model("groq", True)
+            config.toggle_model("gemini", True)
+            config.toggle_model("deepseek_r1", True)
+            config.toggle_model("gpt35", False)
+            config.toggle_model("gpt4o", False)
+            config.toggle_model("gpt4", False)
+            st.success("Free Only mode activated")
+            st.rerun()
+    
+    with col3:
+        if st.button("Balanced", use_container_width=True):
+            config.set_strategy("hybrid")
+            config.toggle_model("groq", True)
+            config.toggle_model("gpt35", True)
+            config.toggle_model("gpt4o", True)
+            config.toggle_model("gpt4", True)
+            config.toggle_model("gemini", False)
+            config.toggle_model("deepseek_r1", True)
+            st.success("Balanced mode activated")
+            st.rerun()
+    
+    with col4:
+        if st.button("Premium", use_container_width=True):
+            config.set_strategy("openai_only")
+            config.toggle_model("groq", False)
+            config.toggle_model("gemini", False)
+            config.toggle_model("deepseek_r1", False)
+            config.toggle_model("gpt35", True)
+            config.toggle_model("gpt4o", True)
+            config.toggle_model("gpt4", True)
+            st.success("Premium mode activated")
+            st.rerun()
+    
+    st.divider()
+    
+    # Individual Model Controls
+    st.markdown("#### Individual Model Controls")
+    
+    models = {
+        "groq": {"name": "Groq", "category": "Free", "cost": "$0 / 1M tokens"},
+        "gpt35": {"name": "GPT-3.5", "category": "Cheap", "cost": "$2.00 / 1M tokens"},
+        "gpt4o": {"name": "GPT-4o", "category": "Balanced", "cost": "$20.00 / 1M tokens"},
+        "gpt4": {"name": "GPT-4", "category": "Premium", "cost": "$90.00 / 1M tokens"},
+        "gemini": {"name": "Gemini", "category": "Free", "cost": "$0 / 1M tokens"},
+        "deepseek_r1": {"name": "DeepSeek R1", "category": "Free", "cost": "$0 / 1M tokens"}
+    }
+    
+    cols = st.columns(2)
+    for idx, (model_id, model_info) in enumerate(models.items()):
+        with cols[idx % 2]:
+            config_data = config.get_model_config(model_id)
+            is_enabled = config_data.get("enabled", False)
+            max_percent = config_data.get("max_percent", 0)
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                new_enabled = st.checkbox(
+                    f"{model_info['name']}",
+                    value=is_enabled,
+                    key=f"toggle_{model_id}"
+                )
+                st.caption(f"{model_info['category']} • {model_info['cost']}")
+                
+                if new_enabled != is_enabled:
+                    config.toggle_model(model_id, new_enabled)
+                    st.rerun()
+            
+            if is_enabled:
+                with col2:
+                    new_percent = st.number_input(
+                        "%",
+                        min_value=0,
+                        max_value=100,
+                        value=max_percent,
+                        step=5,
+                        key=f"percent_{model_id}"
+                    )
+                    if new_percent != max_percent:
+                        config.config["enabled_models"][model_id]["max_percent"] = new_percent
+                        config.save_strategy()
+            st.divider()
+    
+    # Statistics
+    st.divider()
+    st.markdown("#### Strategy Statistics")
+    
+    stats = config.get_stats()
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Active Models", f"{stats['enabled_count']}/{stats['total_models']}")
+    with col2:
+        st.metric("Strategy", stats['strategy'].replace('_', ' ').title())
+    with col3:
+        st.metric("Estimated Cost", f"${stats['estimated_cost']:.2f}")
+    with col4:
+        st.metric("Categories", len(stats['categories']))
+    
+    # Cost Limit
+    st.divider()
+    st.markdown("#### Cost Limit")
+    current_limit = config.config.get("cost_limit", 50.00)
+    new_limit = st.number_input(
+        "Monthly Cost Limit (USD)",
+        min_value=0.0,
+        max_value=500.0,
+        value=float(current_limit),
+        step=5.0
+    )
+    if new_limit != current_limit:
+        config.config["cost_limit"] = new_limit
+        config.save_strategy()
+        st.success(f"Cost limit updated to ${new_limit:.2f}")
+    
+    # Auto-fallback
+    auto_fallback = config.config.get("auto_fallback", True)
+    new_fallback = st.checkbox("Auto Fallback (use next model if primary fails)", value=auto_fallback)
+    if new_fallback != auto_fallback:
+        config.config["auto_fallback"] = new_fallback
+        config.save_strategy()
+        st.success("Auto-fallback updated")
+    
+    st.caption(f"Last updated: {config.config.get('last_updated', 'Never')}")
+
+# ============================================================
+# === MODEL STRATEGY CLASS ===
+# ============================================================
+class ModelStrategy:
+    def __init__(self):
+        self.strategy_file = "model_strategy.json"
+        self.load_strategy()
+
+    def load_strategy(self):
+        if os.path.exists(self.strategy_file):
+            try:
+                with open(self.strategy_file, 'r') as f:
+                    self.config = json.load(f)
+            except Exception as e:
+                secure_logger.log_error(f"Load strategy error: {str(e)}")
+                self.config = self.get_default_config()
+                self.save_strategy()
+        else:
+            self.config = self.get_default_config()
+            self.save_strategy()
+
+    def save_strategy(self):
+        try:
+            with open(self.strategy_file, 'w') as f:
+                json.dump(self.config, f, indent=2)
+        except Exception as e:
+            secure_logger.log_error(f"Save strategy error: {str(e)}")
+
+    def get_default_config(self):
+        return {
+            "enabled_models": {
+                "groq": {"enabled": True, "priority": 1, "max_percent": 70, "cost_per_1m": 0, "category": "Free"},
+                "gpt35": {"enabled": True, "priority": 2, "max_percent": 15, "cost_per_1m": 2.00, "category": "Cheap"},
+                "gpt4o": {"enabled": True, "priority": 3, "max_percent": 10, "cost_per_1m": 20.00, "category": "Balanced"},
+                "gpt4": {"enabled": True, "priority": 4, "max_percent": 5, "cost_per_1m": 90.00, "category": "Premium"},
+                "gemini": {"enabled": False, "priority": 5, "max_percent": 0, "cost_per_1m": 0, "category": "Free"},
+                "deepseek_r1": {"enabled": True, "priority": 6, "max_percent": 0, "cost_per_1m": 0, "category": "Free"}
+            },
+            "strategy": "hybrid",
+            "auto_fallback": True,
+            "cost_limit": 50.00,
+            "last_updated": datetime.datetime.now().isoformat()
+        }
+
+    def get_enabled_models(self):
+        enabled = []
+        for model_id, config in self.config["enabled_models"].items():
+            if config["enabled"]:
+                enabled.append(model_id)
+        return enabled
+
+    def get_strategy(self):
+        return self.config.get("strategy", "hybrid")
+
+    def set_strategy(self, strategy):
+        self.config["strategy"] = strategy
+        self.config["last_updated"] = datetime.datetime.now().isoformat()
+        self.save_strategy()
+
+    def toggle_model(self, model_id, enabled):
+        if model_id in self.config["enabled_models"]:
+            self.config["enabled_models"][model_id]["enabled"] = enabled
+            self.config["last_updated"] = datetime.datetime.now().isoformat()
+            self.save_strategy()
+            return True
+        return False
+
+    def get_model_config(self, model_id):
+        return self.config["enabled_models"].get(model_id, {})
+
+    def calculate_estimated_cost(self, total_tokens=1000000000):
+        total_cost = 0
+        for model_id, config in self.config["enabled_models"].items():
+            if config["enabled"]:
+                percent = config.get("max_percent", 0) / 100
+                tokens = total_tokens * percent
+                cost = (tokens / 1000000) * config.get("cost_per_1m", 0)
+                total_cost += cost
+        return total_cost
+
+    def get_stats(self):
+        enabled = self.get_enabled_models()
+        total = len(self.config["enabled_models"])
+        categories = {}
+        for model_id, config in self.config["enabled_models"].items():
+            category = config.get("category", "Unknown")
+            if config["enabled"]:
+                categories[category] = categories.get(category, 0) + 1
+        return {
+            "enabled_count": len(enabled),
+            "total_models": total,
+            "categories": categories,
+            "strategy": self.get_strategy(),
+            "estimated_cost": self.calculate_estimated_cost(),
+            "last_updated": self.config.get("last_updated", "Never")
+        }
+
+# ============================================================
 # === MAIN ===
 # ============================================================
 def main():
@@ -2567,6 +2902,10 @@ def main():
         
         tabs = ["Chat", "Poster", "Video"]
         
+        # Add Strategy tab for admin
+        if is_admin_user(st.session_state.get("username", "")):
+            tabs.append("Strategy")
+        
         for tab in tabs:
             if st.button(tab, key=f"nav_{tab}", use_container_width=True):
                 st.session_state.current_tab = tab
@@ -2594,6 +2933,8 @@ def main():
         poster_generator_ui()
     elif st.session_state.current_tab == "Video":
         video_generator_ui()
+    elif st.session_state.current_tab == "Strategy":
+        admin_strategy_ui()
     else:
         st.info("Feature coming soon.")
 
