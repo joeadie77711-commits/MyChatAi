@@ -1,4 +1,4 @@
-# app.py - MyChatAI Pro v71.1 (FINAL - TANPA PYREBASE)
+# app.py - MyChatAI Pro v71.2 (FINAL - SEMUA PEMBAIKAN)
 # ============================================================
 
 import streamlit as st
@@ -33,7 +33,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # ============================================================
 # === VERSION ===
 # ============================================================
-APP_VERSION = "v71.1"
+APP_VERSION = "v71.2"
 APP_NAME = "MyChatAI Pro"
 
 # ============================================================
