@@ -1,6 +1,3 @@
-# app.py - MyChatAI Pro v70.2 
-# ============================================================
-
 import streamlit as st
 import datetime
 import json
@@ -31,7 +28,7 @@ import logging.handlers
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ============================================================
-# === FIX #1: IMPORT OPENAI (SATU SAHAJA) ===
+# === OPENAI IMPORT ===
 # ============================================================
 try:
     import openai
@@ -61,12 +58,11 @@ try:
     HAVE_PORTALOCKER = True
 except ImportError:
     HAVE_PORTALOCKER = False
-    print("portalocker not installed. Using fallback file operations.")
 
 # ============================================================
 # === VERSION ===
 # ============================================================
-APP_VERSION = "v70.2"
+APP_VERSION = "v70.4"
 APP_NAME = "MyChatAI Pro"
 
 # ============================================================
@@ -133,7 +129,7 @@ secure_logger = SecureLogger()
 # ============================================================
 st.set_page_config(
     page_title=f"{APP_NAME} {APP_VERSION}",
-    page_icon="",
+    page_icon=None,  # FIX #2: Guna None
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -147,6 +143,7 @@ CACHE_INTERVAL = 10
 BATCH_SIZE = 10
 TYPING_SPEED_FAST = 0.01
 TYPING_SPEED_SLOW = 0.02
+MAX_INPUT_LENGTH = 4000
 
 USER_DATA_FILE = "mychat_users.json"
 CHAT_HISTORY_FILE = "mychat_chats.json"
@@ -158,10 +155,12 @@ DEFAULT_AVATAR = "https://ui-avatars.com/api/?name=User&background=4d6bfe&color=
 SESSION_TIMEOUT = 31536000
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
-MAX_INPUT_LENGTH = 4000
+
+# FIX #8: Session salt tetap
+_SESSION_SALT = st.secrets.get("SESSION_SECRET", "mychatai_fixed_salt_2024")
 
 # ============================================================
-# === CACHING DENGAN HASH_FUNCS ===
+# === CACHING ===
 # ============================================================
 @st.cache_data(ttl=300)
 def load_users_cached():
@@ -173,7 +172,7 @@ def load_usage_cached(username):
     return data.get(username, {"count": 0})
 
 # ============================================================
-# === REQUESTS SESSION DENGAN TIMEOUT ===
+# === REQUESTS SESSION ===
 # ============================================================
 def get_requests_session():
     session = requests.Session()
@@ -186,8 +185,6 @@ def get_requests_session():
     adapter = HTTPAdapter(max_retries=retries)
     session.mount('https://', adapter)
     session.mount('http://', adapter)
-    # FIX #12: Set timeout pada session
-    session.timeout = API_TIMEOUT
     return session
 
 requests_session = get_requests_session()
@@ -210,10 +207,9 @@ def safe_get(obj, path, default=None):
     return obj
 
 # ============================================================
-# === SAFE FILE OPERATIONS (DENGAN RETRY) ===
+# === SAFE FILE OPERATIONS ===
 # ============================================================
 def safe_read_json(filepath, default=None, retries=3):
-    """Safe read JSON with portalocker fallback and retry"""
     for attempt in range(retries):
         try:
             with open(filepath, 'r') as f:
@@ -243,7 +239,6 @@ def safe_read_json(filepath, default=None, retries=3):
     return default if default is not None else {}
 
 def safe_write_json(filepath, data, retries=3):
-    """Safe write JSON with portalocker, atomic write, and retry"""
     temp_file = filepath + ".tmp"
     for attempt in range(retries):
         try:
@@ -313,7 +308,6 @@ if not ADMIN_EMAIL or not ADMIN_PASSWORD:
     st.error("Admin credentials not configured.")
     st.stop()
 
-# FIX #5: MAX_FREE_REQUESTS dengan try/except
 try:
     MAX_FREE_REQUESTS = int(st.secrets.get("MAX_FREE_REQUESTS", 1000))
 except (TypeError, ValueError):
@@ -338,6 +332,12 @@ def save_usage(username, data):
     safe_write_json("mychat_usage.json", all_data)
     load_usage_cached.clear()
 
+def load_chats():
+    return safe_read_json(CHAT_HISTORY_FILE, {})
+
+def save_chats(data):
+    safe_write_json(CHAT_HISTORY_FILE, data)
+
 # ============================================================
 # === SMART CACHE (THREAD-SAFE) ===
 # ============================================================
@@ -349,7 +349,7 @@ class SmartCache:
         self.max_cache_size = 100
         self.cache_file = "cache_data.json"
         self._cache_counter = 0
-        self._lock = threading.RLock()  # FIX #9: Thread-safe
+        self._lock = threading.RLock()
         self._load_cache_from_file()
 
     def _load_cache_from_file(self):
@@ -427,7 +427,7 @@ class SmartCache:
 smart_cache = SmartCache()
 
 # ============================================================
-# === TYPING EFFECT (NON-BLOCKING) ===
+# === TYPING EFFECT ===
 # ============================================================
 class TypingEffect:
     def stream_response(self, text):
@@ -435,7 +435,6 @@ class TypingEffect:
             yield ""
             return
         
-        # FIX #13: Stream per sentence untuk reduce blocking
         if len(text) < 200:
             for char in text:
                 yield char
@@ -502,7 +501,6 @@ class FirebaseManager:
         self._init_firebase()
 
     def _init_firebase(self):
-        # FIX #6: Jangan initialize jika tiada service account
         try:
             required_keys = ["FIREBASE_API_KEY", "FIREBASE_AUTH_DOMAIN", "FIREBASE_PROJECT_ID"]
             missing_keys = []
@@ -629,7 +627,7 @@ class FirebaseManager:
                 return {"success": False, "error": "Email already registered"}
             elif "WEAK_PASSWORD" in error_msg:
                 return {"success": False, "error": "Password too weak"}
-            return {"success": False, "error": error_msg)
+            return {"success": False, "error": error_msg}
 
     def save_user_profile(self, uid, data):
         try:
@@ -753,20 +751,27 @@ class AccountLockout:
 account_lockout = AccountLockout()
 
 # ============================================================
-# === SESSION MANAGEMENT (DIPERBAIKI) ===
+# === SESSION MANAGEMENT ===
 # ============================================================
-# FIX #7 & #8: Session security dengan salt tetap
-_SESSION_SALT = st.secrets.get("SESSION_SECRET", secrets.token_urlsafe(32))
-
-def save_session(uid):
-    st.session_state.session_id = uid
-    st.session_state.login_time = str(time.time())
-    st.session_state.session_hash = hashlib.sha256(f"{uid}:{_SESSION_SALT}".encode()).hexdigest()
+def save_session(username):
+    try:
+        # FIX #3: Guna st.query_params (bukan experimental)
+        st.query_params["session"] = username
+        st.query_params["login_time"] = str(time.time())
+    except Exception as e:
+        secure_logger.log_error(f"Save session error: {str(e)}")
+        st.session_state._session_uid = username
+        st.session_state._login_time = time.time()
 
 def clear_session():
+    try:
+        st.query_params.clear()
+    except Exception as e:
+        secure_logger.log_error(f"Clear session error: {str(e)}")
+    
     st.session_state.logged_in = False
     st.session_state.messages = []
-    for key in ["_session_uid", "_login_time", "_session_id", "session_hash"]:
+    for key in ["_session_uid", "_login_time", "_session_id", "session_hash", "uid", "username", "email", "role"]:
         if key in st.session_state:
             del st.session_state[key]
 
@@ -774,19 +779,44 @@ def check_auto_login():
     try:
         if "uid" in st.session_state and st.session_state.logged_in:
             return True
-        if "session_id" in st.session_state:
-            uid = st.session_state.session_id
-            if uid and firebase_manager.is_ready():
-                profile = firebase_manager.get_user_profile(uid)
-                if profile:
-                    st.session_state.logged_in = True
-                    st.session_state.uid = uid
-                    st.session_state.email = profile.get("email", "")
-                    st.session_state.username = profile.get("name", "User")
-                    st.session_state.role = profile.get("role", "user")
-                    st.session_state.messages = []
-                    st.session_state._rerun_needed = True
-                    return True
+        
+        # FIX #3: Guna st.query_params
+        try:
+            params = st.query_params
+        except Exception:
+            params = {}
+        
+        # Handle list values from query params
+        session_val = params.get("session")
+        if session_val:
+            username = session_val[0] if isinstance(session_val, list) else session_val
+            login_time = params.get("login_time", str(time.time()))
+            if isinstance(login_time, list):
+                login_time = login_time[0] if login_time else str(time.time())
+            
+            users = load_users()
+            if username in users:
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                st.session_state.uid = username
+                st.session_state.email = users[username].get("email", "")
+                st.session_state.role = users[username].get("role", "user")
+                st.session_state.messages = []
+                st.session_state.session_start = time.time()
+                return True
+        
+        # Fallback to session state
+        uid = st.session_state.get("_session_uid")
+        if uid and firebase_manager.is_ready():
+            profile = firebase_manager.get_user_profile(uid)
+            if profile:
+                st.session_state.logged_in = True
+                st.session_state.uid = uid
+                st.session_state.email = profile.get("email", "")
+                st.session_state.username = profile.get("name", "User")
+                st.session_state.role = profile.get("role", "user")
+                st.session_state.messages = []
+                return True
     except Exception as e:
         secure_logger.log_error(f"Auto-login error: {str(e)}")
     return False
@@ -795,18 +825,20 @@ def validate_session():
     try:
         if not st.session_state.get("logged_in"):
             return False
+        
         uid = st.session_state.get("uid")
         if not uid:
             return False
         
-        # FIX #7: Guna salt tetap
+        # Validate with salt
         expected_hash = hashlib.sha256(f"{uid}:{_SESSION_SALT}".encode()).hexdigest()
         if st.session_state.get('session_hash') != expected_hash:
             secure_logger.log_warning(f"Session validation failed for user: {uid}")
             clear_session()
             return False
         
-        login_time = st.session_state.get("login_time")
+        # Check session timeout
+        login_time = st.session_state.get("login_time") or st.session_state.get("session_start")
         if login_time:
             try:
                 login_time = float(login_time)
@@ -818,15 +850,28 @@ def validate_session():
             except:
                 pass
         
+        # Check with Firebase if available
         if firebase_manager.is_ready():
             profile = firebase_manager.get_user_profile(uid)
             if profile:
                 st.session_state.login_time = str(time.time())
                 return True
             else:
+                # Try JSON fallback
+                users = load_users()
+                if uid in users:
+                    st.session_state.login_time = str(time.time())
+                    return True
                 clear_session()
                 return False
         
+        # Firebase not available, check JSON
+        users = load_users()
+        if uid in users:
+            st.session_state.login_time = str(time.time())
+            return True
+        
+        clear_session()
         return False
     except Exception as e:
         secure_logger.log_error(f"Session validation error: {str(e)}")
@@ -1049,7 +1094,7 @@ def call_groq(prompt):
             "max_tokens": 2048
         }
         response = requests_session.post(url, json=payload, headers=headers, timeout=API_TIMEOUT)
-        if response.status_code == 200:
+        if 200 <= response.status_code < 300:
             data = response.json()
             content = safe_get(data, ['choices', 0, 'message', 'content'])
             if content is not None:
@@ -1069,7 +1114,7 @@ def call_gemini_free(prompt):
         headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         response = requests_session.post(url, json=payload, headers=headers, timeout=API_TIMEOUT)
-        if response.status_code == 200:
+        if 200 <= response.status_code < 300:
             data = response.json()
             content = safe_get(data, ['candidates', 0, 'content', 'parts', 0, 'text'])
             if content is not None:
@@ -1085,43 +1130,53 @@ def call_deepseek_r1_via_openrouter(prompt):
     if not OPENROUTER_API_KEY:
         return {"ok": False, "error": "OpenRouter API key not configured"}
     try:
-        # FIX #21: Guna openai.OpenAI dengan versi yang betul
         if OPENAI_AVAILABLE:
-            client = openai.OpenAI(
-                api_key=OPENROUTER_API_KEY,
-                base_url="https://openrouter.ai/api/v1",
-            )
-            response = client.chat.completions.create(
-                model="deepseek/deepseek-r1",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                max_tokens=4096
-            )
-            return {"ok": True, "text": response.choices[0].message.content}
+            try:
+                # FIX #4: Try OpenAI v1
+                client = openai.OpenAI(
+                    api_key=OPENROUTER_API_KEY,
+                    base_url="https://openrouter.ai/api/v1",
+                )
+                response = client.chat.completions.create(
+                    model="deepseek/deepseek-r1",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.7,
+                    max_tokens=4096
+                )
+                return {"ok": True, "text": response.choices[0].message.content}
+            except Exception as e:
+                secure_logger.log_warning(f"OpenAI client failed: {str(e)}")
+                # Fallback to requests
+                return _call_openrouter_via_requests(prompt)
         else:
-            # Fallback: guna requests langsung
-            url = "https://openrouter.ai/api/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://mychatai.com",
-                "X-Title": "MyChatAI Pro"
-            }
-            payload = {
-                "model": "deepseek/deepseek-r1",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.7,
-                "max_tokens": 4096
-            }
-            response = requests_session.post(url, json=payload, headers=headers, timeout=API_TIMEOUT)
-            if response.status_code == 200:
-                data = response.json()
-                content = safe_get(data, ['choices', 0, 'message', 'content'])
-                if content is not None:
-                    return {"ok": True, "text": content}
-            return {"ok": False, "error": "OpenRouter request failed"}
+            return _call_openrouter_via_requests(prompt)
     except Exception as e:
         secure_logger.log_error(f"DeepSeek R1 error: {str(e)}")
+        return {"ok": False, "error": str(e)}
+
+def _call_openrouter_via_requests(prompt):
+    try:
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://mychatai.com",
+            "X-Title": "MyChatAI Pro"
+        }
+        payload = {
+            "model": "deepseek/deepseek-r1",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+            "max_tokens": 4096
+        }
+        response = requests_session.post(url, json=payload, headers=headers, timeout=API_TIMEOUT)
+        if 200 <= response.status_code < 300:
+            data = response.json()
+            content = safe_get(data, ['choices', 0, 'message', 'content'])
+            if content is not None:
+                return {"ok": True, "text": content}
+        return {"ok": False, "error": "OpenRouter request failed"}
+    except Exception as e:
         return {"ok": False, "error": str(e)}
 
 def call_gpt35(prompt):
@@ -1222,7 +1277,7 @@ def get_offline_response(prompt):
     ]
     return random.choice(responses)
 
-def sanitize_input(text, max_length=1000, allow_newlines=True):
+def sanitize_input(text, max_length=MAX_INPUT_LENGTH, allow_newlines=True):
     if text is None:
         return ""
     text = str(text)
@@ -1354,12 +1409,37 @@ def increment_usage(username):
     save_usage(username, usage)
     return usage["count"]
 
+# FIX #9: Improved admin detection
 def is_admin_user(username):
-    if username == "admin":
+    # Check JSON
+    users = load_users()
+    if username in users and users[username].get("role") == "admin":
         return True
+    
+    # Check Firebase
+    if firebase_manager.is_ready():
+        uid = st.session_state.get("uid")
+        if uid:
+            profile = firebase_manager.get_user_profile(uid)
+            if profile and profile.get("role") == "admin":
+                return True
+    
     return False
 
 def is_premium_user(username):
+    # Check JSON
+    users = load_users()
+    if username in users and users[username].get("is_premium", False):
+        return True
+    
+    # Check Firebase
+    if firebase_manager.is_ready():
+        uid = st.session_state.get("uid")
+        if uid:
+            profile = firebase_manager.get_user_profile(uid)
+            if profile and profile.get("is_premium", False):
+                return True
+    
     return False
 
 def check_usage_limit(username):
@@ -1386,7 +1466,6 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
     if is_identity_question(prompt):
         return typing_effect.stream_response(get_identity_response_emotional(username))
     
-    # Check cache
     cached = smart_cache.get_cached_response(prompt)
     if cached:
         return typing_effect.stream_response(cached)
@@ -1413,11 +1492,9 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
         smart_cache.save_response(prompt, response)
         return typing_effect.stream_response(response)
     
-    # Penal Mode
     penal_mode = st.session_state.get("penal_mode", True)
     
     if not penal_mode:
-        # Free mode
         response = None
         result = call_groq(enhanced_prompt)
         if result.get("ok"):
@@ -1439,7 +1516,6 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
         else:
             return typing_effect.stream_response(get_offline_response(prompt))
     
-    # Normal mode
     model_to_use = analyze_task_complexity(prompt)
     response = None
     
@@ -1489,7 +1565,6 @@ def smart_ai(username, prompt, think_mode=False, search_mode=False):
 # === UTILITY FUNCTIONS ===
 # ============================================================
 def calculate_confidence(response, prompt):
-    # FIX #17: Normalize confidence calculation
     base = 70
     length_bonus = min(len(response) // 100, 20)
     uncertain_words = ["maybe", "perhaps", "might", "could", "possibly", "may", "probably"]
@@ -1501,7 +1576,6 @@ def calculate_confidence(response, prompt):
     return max(0, min(100, score))
 
 def get_confidence_label(score):
-    # FIX #18: Clear thresholds
     if score >= 85:
         return "Very High"
     elif score >= 70:
@@ -1511,7 +1585,7 @@ def get_confidence_label(score):
     elif score >= 40:
         return "Low"
     else:
-        return "Very Low"
+        return "Very Low"  # FIX #21: Added else
 
 def analyze_response(response):
     analysis = {
@@ -1535,6 +1609,84 @@ def analyze_response(response):
     if analysis["sentences"] > 5:
         score += 10
     return analysis, min(100, max(0, score))
+
+# ============================================================
+# === LOGIN FUNCTIONS ===
+# ============================================================
+# FIX #5: Login dengan bcrypt yang betul
+def login_user(username, password):
+    users = load_users()
+    
+    # Support login with email
+    if "@" in username and username not in users:
+        for u, data in users.items():
+            if data.get("email", "").lower() == username.lower():
+                username = u
+                break
+    
+    if username not in users:
+        return {"success": False, "error": "User not found"}
+    
+    stored_hash = users[username]["password"]
+    
+    # FIX #5: Guna bcrypt.checkpw yang betul
+    try:
+        if bcrypt.checkpw(password.encode(), stored_hash.encode()):
+            return {"success": True, "username": username, "role": users[username].get("role", "user")}
+        else:
+            return {"success": False, "error": "Invalid password"}
+    except Exception as e:
+        secure_logger.log_error(f"Password check error: {str(e)}")
+        return {"success": False, "error": "Login error"}
+
+# FIX #7: Password validation strength
+def validate_password_strength(password):
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters"
+    if not any(c.isupper() for c in password):
+        return False, "Password must contain at least one uppercase letter"
+    if not any(c.islower() for c in password):
+        return False, "Password must contain at least one lowercase letter"
+    if not any(c.isdigit() for c in password):
+        return False, "Password must contain at least one number"
+    if not any(c in string.punctuation for c in password):
+        return False, "Password must contain at least one special character"
+    return True, "Strong password"
+
+def register_user(email, password, display_name=""):
+    users = load_users()
+    
+    # Check if email already registered
+    for u, data in users.items():
+        if data.get("email", "").lower() == email.lower():
+            return {"success": False, "error": "Email already registered"}
+    
+    # FIX #7: Validate password strength
+    is_strong, msg = validate_password_strength(password)
+    if not is_strong:
+        return {"success": False, "error": msg}
+    
+    # Generate username from email
+    username = email.split('@')[0]
+    base_username = username
+    counter = 1
+    while username in users:
+        username = f"{base_username}{counter}"
+        counter += 1
+    
+    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    
+    users[username] = {
+        "password": hashed,
+        "email": email,
+        "name": display_name or username,
+        "role": "user",
+        "avatar": DEFAULT_AVATAR,
+        "created_at": datetime.datetime.now().isoformat()
+    }
+    
+    save_users(users)
+    return {"success": True, "username": username}
 
 # ============================================================
 # === CHAT UI ===
@@ -1582,12 +1734,6 @@ def save_current_chat():
     save_chats(history)
     st.success(f"Chat '{chat_title}' saved!")
 
-def load_chats():
-    return safe_read_json(CHAT_HISTORY_FILE, {})
-
-def save_chats(data):
-    safe_write_json(CHAT_HISTORY_FILE, data)
-
 def display_example_questions():
     examples = {
         "General": [
@@ -1622,8 +1768,10 @@ def display_example_questions():
         <div style="font-size: 13px; color: #6a6a7a; margin-bottom: 20px;">Try asking me something from these categories:</div>
     </div>
     """, unsafe_allow_html=True)
+    
+    # FIX #19: Add label for accessibility
     categories = list(examples.keys())
-    selected_category = st.radio("", categories, horizontal=True)
+    selected_category = st.radio("Select category", categories, horizontal=True, label_visibility="collapsed")
     questions = examples.get(selected_category, [])
     cols = st.columns(2)
     for idx, question in enumerate(questions):
@@ -1760,53 +1908,62 @@ def login_ui():
         </div>
     </div>
     """, unsafe_allow_html=True)
+    
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        email = st.text_input("Email", placeholder="Enter your email")
-        password = st.text_input("Password", type="password", placeholder="Enter your password")
+        # Login form
+        username_or_email = st.text_input("Username or Email", placeholder="Enter your username or email", key="login_username")
+        password = st.text_input("Password", type="password", placeholder="Enter your password", key="login_password")
         remember_me = st.checkbox("Remember Me", value=True)
-        with st.expander("Create New Account"):
-            reg_email = st.text_input("Email", placeholder="Enter your email", key="reg_email")
-            reg_password = st.text_input("Password", type="password", placeholder="Create a password", key="reg_password")
-            reg_name = st.text_input("Display Name", placeholder="Your name", key="reg_name")
-            if st.button("Register", use_container_width=True):
-                if reg_email and reg_password:
-                    # Simple email validation
-                    if "@" not in reg_email:
-                        st.error("Please enter a valid email address")
-                    elif len(reg_password) < 6:
-                        st.error("Password must be at least 6 characters")
-                    else:
-                        result = firebase_manager.register_user(reg_email, reg_password, reg_name)
-                        if result["success"]:
-                            st.success("Account created successfully. Please login.")
-                            st.balloons()
-                        else:
-                            st.error(result.get("error", "Registration failed"))
+        
+        if st.button("Login", use_container_width=True, key="login_btn"):
+            if username_or_email and password:
+                result = login_user(username_or_email, password)
+                if result["success"]:
+                    st.session_state.logged_in = True
+                    st.session_state.username = result["username"]
+                    st.session_state.uid = result["username"]
+                    st.session_state.role = result.get("role", "user")
+                    users = load_users()
+                    st.session_state.email = users.get(result["username"], {}).get("email", "")
+                    st.session_state.messages = []
+                    st.session_state.session_start = time.time()
+                    st.session_state.session_hash = hashlib.sha256(f"{result['username']}:{_SESSION_SALT}".encode()).hexdigest()
+                    
+                    if remember_me:
+                        save_session(result["username"])
+                    
+                    st.success("Login successful!")
+                    st.rerun()
                 else:
-                    st.warning("Please fill in all fields")
-        if st.button("Login", use_container_width=True):
-            if email and password:
-                if "@" not in email:
+                    st.error(result.get("error", "Login failed"))
+            else:
+                st.warning("Please enter username/email and password")
+        
+        st.divider()
+        
+        # Register form
+        st.markdown("### Create New Account")
+        reg_email = st.text_input("Email", placeholder="Enter your email", key="reg_email")
+        reg_password = st.text_input("Password", type="password", placeholder="Create a password", key="reg_password")
+        reg_name = st.text_input("Display Name", placeholder="Your name", key="reg_name")
+        
+        # Show password requirements
+        st.caption("Password must be 8+ characters with uppercase, lowercase, number, and special character")
+        
+        if st.button("Register", use_container_width=True, key="register_btn"):
+            if reg_email and reg_password:
+                if "@" not in reg_email:
                     st.error("Please enter a valid email address")
                 else:
-                    result = firebase_manager.login_user(email, password)
+                    result = register_user(reg_email, reg_password, reg_name)
                     if result["success"]:
-                        st.session_state.logged_in = True
-                        st.session_state.uid = result["uid"]
-                        st.session_state.email = result["email"]
-                        st.session_state.username = result["profile"].get("name", "User") if result["profile"] else "User"
-                        st.session_state.role = result["profile"].get("role", "user") if result["profile"] else "user"
-                        st.session_state.messages = []
-                        if remember_me:
-                            save_session(result["uid"])
-                        firebase_manager.increment_usage(result["uid"])
-                        st.success("Login successful!")
-                        st.rerun()
+                        st.success("Account created successfully. Please login.")
+                        st.balloons()
                     else:
-                        st.error(result.get("error", "Login failed"))
+                        st.error(result.get("error", "Registration failed"))
             else:
-                st.warning("Please enter email and password")
+                st.warning("Please fill in all fields")
 
 # ============================================================
 # === POSTER GENERATOR ===
@@ -1816,7 +1973,7 @@ def poster_generator_ui():
     if not OPENAI_API_KEY:
         st.info("Using free image generation. Add OpenAI API key for higher quality.")
     
-    title = st.text_input("Title", placeholder="e.g., AI Conference 2026", key="poster_title_main")
+    title = st.text_input("Title", placeholder="e.g., AI Conference 2026", key="poster_title")
     if not title:
         st.info("Please enter a title to generate poster")
         return
@@ -1849,7 +2006,7 @@ def poster_generator_ui():
                         encoded_prompt = quote(prompt)
                         url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
                         response = requests_session.get(url, timeout=API_TIMEOUT)
-                        if response.status_code == 200:
+                        if 200 <= response.status_code < 300:
                             img = Image.open(BytesIO(response.content))
                             st.image(img, caption=title, use_container_width=True)
                             img_bytes = BytesIO()
@@ -1877,7 +2034,7 @@ def video_generator_ui():
                     encoded_prompt = quote(prompt[:200])
                     url = f"https://image.pollinations.ai/video?prompt={encoded_prompt}&duration={duration}"
                     response = requests_session.get(url, timeout=API_TIMEOUT)
-                    if response.status_code == 200:
+                    if 200 <= response.status_code < 300:
                         st.video(response.content)
                         st.success("Video generated successfully!")
                     else:
@@ -1896,12 +2053,14 @@ def main():
     if "penal_mode" not in st.session_state:
         st.session_state.penal_mode = True
     
+    # Check auto login
     if not st.session_state.logged_in:
         if check_auto_login():
             return
         login_ui()
         return
     
+    # Validate session
     if not validate_session():
         st.warning("Your session has expired. Please login again.")
         st.session_state.logged_in = False
