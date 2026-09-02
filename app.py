@@ -1,6 +1,3 @@
-# app.py - MyChatAI Pro v70.8 (FINAL - SEMUA PEMBAIKAN LENGKAP)
-# ============================================================
-
 import streamlit as st
 import datetime
 import json
