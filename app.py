@@ -1,4 +1,4 @@
-# app.py - MyChatAI Pro v70.2 (SEMUA KESALAHAN DIPERBAIKI)
+# app.py - MyChatAI Pro v70.2 
 # ============================================================
 
 import streamlit as st
